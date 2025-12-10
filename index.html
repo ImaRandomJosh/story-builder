@@ -1097,6 +1097,7 @@
             const [shareUrl, setShareUrl] = useState("");
 
             const fileInputRef = useRef(null);
+            const lastSavedRef = useRef(null);
 
             const params = new URLSearchParams(window.location.search);
             const snapshotId = params.get("snapshot");
@@ -1162,9 +1163,19 @@
                         async (docSnap) => {
                             if (docSnap.exists()) {
                                 const data = docSnap.data();
-                                setMetadata(data.metadata || INITIAL_METADATA);
-                                setNodes(data.nodes || INITIAL_NODES);
-                            } else {
+                                const newMetadata = data.metadata || INITIAL_METADATA;
+                                const newNodes = data.nodes || INITIAL_NODES;
+
+                                setMetadata(newMetadata);
+                                setNodes(newNodes);
+
+                                // Remember this snapshot as the "saved" version
+                                lastSavedRef.current = JSON.stringify({
+                                    metadata: newMetadata,
+                                    nodes: newNodes,
+                                });
+                            }
+                            else {
                                 // First time: create initial doc
                                 try {
                                     await window.firebase.setDoc(storyRef, {
@@ -1201,6 +1212,12 @@
                 const storyRef = window.firebase.doc(db, "stories", firebaseUser.uid);
 
                 const timeoutId = setTimeout(async () => {
+                    // Only save if something actually changed vs lastSavedRef
+                    const currentState = JSON.stringify({ metadata, nodes });
+                    if (lastSavedRef.current && lastSavedRef.current === currentState) {
+                        return;
+                    }
+
                     try {
                         setIsSyncing(true);
                         await window.firebase.setDoc(storyRef, {
@@ -1208,6 +1225,9 @@
                             nodes,
                             lastUpdated: new Date().toISOString()
                         });
+
+                        // Mark this state as the latest saved one
+                        lastSavedRef.current = currentState;
                     } catch (e) {
                         console.error("Save error:", e);
                     } finally {
