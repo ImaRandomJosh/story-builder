@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creating CYOA - Grade 7 Story Builder (Snapshot Sharing)</title>
+    
+    <!-- Load React, ReactDOM, Babel, and Tailwind CSS -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // Note: Using addDoc for snapshots, setDoc for private auto-save, getDoc for public snapshot read.
+        import { getFirestore, doc, setDoc, getDoc, addDoc, collection, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Expose Firebase tools to the global scope for use in the React/Babel script
+        window.firebaseTools = { 
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, 
+            onAuthStateChanged, getFirestore, doc, setDoc, getDoc, 
+            addDoc, collection, onSnapshot, setLogLevel 
+        };
+    </script>
+
+    
+    <!-- Load Fonts (Inter for UI, Merriweather for Story Text) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Merriweather:ital,wght@0,300;0,700;1,400&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; margin: 0; padding: 0; }
+        .serif-text { font-family: 'Merriweather', serif; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        /* Custom Scrollbar for better UX */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- Global Constants & Initial Data ---
+        const INITIAL_METADATA = {
+            title: 'My Interactive Story',
+            author: 'A Grade 7 Author',
+            genre: 'Fantasy',
+            goal: 'Define your main character’s central desire or quest.',
+            conflict: 'Define the challenge or antagonist that prevents the goal from being easily met.'
+        };
+        
+        // Define the structure for a story page (node)
+        const SAMPLE_NODE = {
+            id: 'start', // The unique ID for the starting node
+            title: 'The Beginning',
+            content: 'Set the scene here. Describe the setting (where your character is) and the first challenge or decision they must face to begin their journey.\n\n[PROMPT: Describe your character’s immediate surroundings using sensory details (sight, sound, smell).]',
+            choices: [
+                { id: 'c1', text: 'Go left into the Whispering Woods', targetId: null },
+                { id: 'c2', text: 'Follow the old river path', targetId: null }
+            ]
+        };
+        const INITIAL_NODES = [SAMPLE_NODE];
+        
+        // Auto-save debounce delay in milliseconds
+        const AUTOSAVE_DELAY_MS = 1500; 
+
+        // --- Utility Functions (Icons, Toast, URL Parsing) ---
+        
+        // Function to parse URL query parameters
+        const getQueryParams = () => {
+            const params = {};
+            // We are looking for 'snapshotId' now instead of 'shareId'
+            const urlParams = new URLSearchParams(window.location.search);
+            for (const [key, value] of urlParams.entries()) {
+                params[key] = value;
+            }
+            return params;
+        };
+        
+        // Uses Lucide icons implemented as inline SVG
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const icons = {
+                BookOpen: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
+                Map: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>,
+                Play: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>,
+                Plus: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+                Check: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+                X: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+                Trash: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
+                Edit: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+                Save: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>,
+                Cloud: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 16h17a2.5 2.5 0 0 0 0-5h-2.13a6 6 0 1 0-11.72 0H2.5a2.5 2.5 0 0 0 0 5z"/></svg>,
+                Download: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+                Upload: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+                Copy: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>,
+                Share2: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>,
+                Loading: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            };
+            return <div className={className}>{icons[name] || icons.BookOpen}</div>;
+        };
+
+        // Custom Toast notification for feedback
+        const Toast = ({ message, onClose }) => {
+            if (!message) return null;
+            return (
+                <div className="fixed bottom-4 right-4 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 fade-in z-50 border border-slate-700">
+                    <span className="font-medium">{message}</span>
+                    <button onClick={onClose} className="hover:text-slate-300 opacity-70 hover:opacity-100"><Icon name="X" size={16}/></button>
+                </div>
+            );
+        };
+
+        // Writer's Checklist for educational guidance
+        const Checklist = () => (
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-5 mb-8 rounded-r-lg shadow-sm">
+                <h3 className="font-bold text-yellow-800 flex items-center gap-2 text-lg">
+                    <Icon name="Check" size={20}/> Grade 7 Writer's Checklist
+                </h3>
+                <ul className="mt-3 text-sm text-yellow-800 space-y-2 ml-1">
+                    <li className="flex gap-2"><span className="font-bold">• Voice:</span> Does your narrator sound consistent throughout?</li>
+                    <li className="flex gap-2"><span className="font-bold">• Sensory Details:</span> Describe what you see, hear, smell, and feel.</li>
+                    <li className="flex gap-2"><span className="font-bold">• Organization:</span> Do the choices make logical sense for the character?</li>
+                    <li className="flex gap-2"><span className="font-bold">• Conventions:</span> Check your spelling, punctuation, and grammar.</li>
+                </ul>
+            </div>
+        );
+
+        // Planner Component
+        const Planner = ({ metadata, setMetadata, isReadMode }) => {
+            const GENRES = ["Fantasy", "Sci-Fi", "Mystery", "Survival", "Historical Fiction", "Horror", "Comedy"];
+            const inputProps = isReadMode ? { readOnly: true, disabled: true } : {};
+
+            return (
+                <div className="max-w-3xl mx-auto fade-in pb-12">
+                    <h2 className="text-3xl font-extrabold text-slate-800 mb-6 tracking-tight">Step 1: The Blueprint</h2>
+                    <Checklist />
+                    <div className="grid gap-6">
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                            <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">Story Title</label>
+                            <input 
+                                type="text" 
+                                value={metadata.title}
+                                onChange={(e) => setMetadata({...metadata, title: e.target.value})}
+                                className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xl font-bold text-slate-800"
+                                placeholder="e.g. The Mystery of the Missing Key"
+                                {...inputProps}
+                            />
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-6">
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">Author</label>
+                                <input 
+                                    type="text" 
+                                    value={metadata.author}
+                                    onChange={(e) => setMetadata({...metadata, author: e.target.value})}
+                                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="Your Name"
+                                    {...inputProps}
+                                />
+                            </div>
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">Genre</label>
+                                <select 
+                                    value={metadata.genre}
+                                    onChange={(e) => setMetadata({...metadata, genre: e.target.value})}
+                                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                                    {...inputProps}
+                                >
+                                    {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                            <h3 className="font-bold text-slate-800 mb-4 text-lg">The Narrative Arc</h3>
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">The Goal (What does your character want?)</label>
+                                    <textarea 
+                                        className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 h-24"
+                                        value={metadata.goal}
+                                        onChange={(e) => setMetadata({...metadata, goal: e.target.value})}
+                                        placeholder="e.g. Find the lost artifact of the Sun Kingdom."
+                                        {...inputProps}
+                                    ></textarea>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">The Conflict (What stops them?)</label>
+                                    <textarea 
+                                        className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 h-24"
+                                        value={metadata.conflict}
+                                        onChange={(e) => setMetadata({...metadata, conflict: e.target.value})}
+                                        placeholder="e.g. An evil wizard has also begun the search and will stop at nothing."
+                                        {...inputProps}
+                                    ></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // Builder Component
+        const Builder = ({ nodes, setNodes, activeNodeId, setActiveNodeId, showToast, isAuthReady }) => {
+            const activeNode = nodes.find(n => n.id === activeNodeId) || nodes[0];
+            const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+
+            if (!isAuthReady) {
+                return <div className="text-center p-20 text-slate-500">Loading story data...</div>;
+            }
+
+            const updateNode = (field, value) => {
+                setNodes(nodes.map(n => n.id === activeNodeId ? { ...n, [field]: value } : n));
+            };
+
+            const addChoice = () => {
+                const newChoice = { id: Date.now().toString(), text: 'New Option', targetId: null }; 
+                updateNode('choices', [...activeNode.choices, newChoice]);
+            };
+
+            const updateChoice = (choiceId, field, value) => {
+                const updatedChoices = activeNode.choices.map(c => 
+                    c.id === choiceId ? { ...c, [field]: value } : c
+                );
+                updateNode('choices', updatedChoices);
+            };
+
+            const removeChoice = (choiceId) => {
+                updateNode('choices', activeNode.choices.filter(c => c.id !== choiceId));
+            };
+
+            const createNewPageForChoice = (choiceId) => {
+                const newPageId = 'page-' + Date.now();
+                const newPage = {
+                    id: newPageId,
+                    title: 'New Scene',
+                    content: 'Write what happens next...',
+                    choices: [] 
+                };
+                setNodes([...nodes, newPage]);
+                updateChoice(choiceId, 'targetId', newPageId);
+                setTimeout(() => setActiveNodeId(newPageId), 100); 
+                showToast("New page created & linked!");
+            };
+
+            const deleteNode = (id) => {
+                if (nodes.length <= 1) {
+                    showToast("You can't delete the only page!");
+                    return;
+                }
+                const newNodes = nodes.filter(n => n.id !== id);
+                
+                const cleanedNodes = newNodes.map(n => ({
+                    ...n,
+                    choices: n.choices.map(c => ({
+                        ...c,
+                        targetId: c.targetId === id ? null : c.targetId
+                    }))
+                }));
+                
+                setNodes(cleanedNodes);
+                setActiveNodeId(cleanedNodes[0].id); 
+                setDeleteConfirmId(null);
+                showToast("Page deleted and links updated.");
+            };
+
+            return (
+                <div className="flex h-[calc(100vh-140px)] gap-4 fade-in">
+                    {/* Left Sidebar: Page List (Story Map) */}
+                    <div className="w-full sm:w-1/4 min-w-[250px] bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 font-bold text-slate-700 flex justify-between items-center">
+                            <span>Your Pages</span>
+                            <span className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full font-bold">{nodes.length} Scenes</span>
+                        </div>
+                        <div className="overflow-y-auto flex-1 p-3 space-y-2">
+                            {nodes.map(node => {
+                                const isLinked = nodes.some(n => n.choices.some(c => c.targetId === node.id));
+                                const isStart = node.id === 'start';
+                                return (
+                                    <div key={node.id} onClick={() => setActiveNodeId(node.id)}
+                                         className={`p-3 rounded-lg cursor-pointer text-sm border transition-all ${
+                                            activeNodeId === node.id ?
+                                            'bg-indigo-50 border-indigo-500 shadow-md transform scale-[1.02] ring-2 ring-indigo-200' : 'bg-white border-slate-200 hover:bg-slate-50'
+                                         }`}>
+                                        <div className="font-bold text-slate-800 truncate">{node.title}</div>
+                                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                            {isStart && <span className="text-[10px] uppercase font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Start</span>}
+                                            {node.choices.length === 0 && !isStart && <span className="text-[10px] uppercase font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded">Ending</span>}
+                                            {!isLinked && !isStart && <span className="text-[10px] uppercase font-bold bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">Unlinked</span>}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="p-3 border-t bg-slate-50">
+                            <button onClick={() => {
+                                const newId = 'page-' + Date.now();
+                                setNodes([...nodes, { id: newId, title: 'New Scene', content: 'Describe this scene...', choices: [] }]);
+                                setActiveNodeId(newId);
+                            }} className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold flex justify-center items-center gap-2 shadow-md">
+                                <Icon name="Plus" size={16}/> New Independent Page
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Editor Area */}
+                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden hidden sm:flex">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
+                            <div className="w-2/3">
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wide">Scene Title</label>
+                                <input type="text" value={activeNode.title} onChange={(e) => updateNode('title', e.target.value)}
+                                       className="text-2xl font-bold text-slate-800 w-full focus:outline-none bg-transparent placeholder-slate-300"/>
+                            </div>
+                            {activeNode.id !== 'start' && (
+                                <div className="flex items-center">
+                                    {deleteConfirmId === activeNode.id ?
+                                    (
+                                        <div className="flex items-center gap-2 bg-red-50 p-1.5 rounded-lg border border-red-100">
+                                            <span className="text-xs text-red-700 font-bold">Delete?</span>
+                                            <button onClick={() => deleteNode(activeNode.id)} className="text-xs bg-red-600 text-white px-3 py-1 rounded shadow hover:bg-red-700 transition">Yes</button>
+                                            <button onClick={() => setDeleteConfirmId(null)} className="text-xs text-slate-500 px-2 hover:text-slate-800 transition">No</button>
+                                        </div>
+                                    ) : (
+                                        <button onClick={() => setDeleteConfirmId(activeNode.id)} className="text-slate-400 hover:text-red-600 p-2 transition"><Icon name="Trash" size={20}/></button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
+                            <div className="flex-1 p-6 border-r border-slate-100 flex flex-col h-full overflow-hidden">
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Story Text</label>
+                                <textarea value={activeNode.content} onChange={(e) => updateNode('content', e.target.value)}
+                                    className="flex-1 w-full resize-none focus:outline-none text-lg leading-relaxed text-slate-700 serif-text p-2 -ml-2 rounded hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-50 transition-all overflow-y-auto"
+                                    placeholder="Write your story here..."></textarea>
+                                <div className="pt-2 border-t border-slate-50 text-right">
+                                    <p className="text-xs text-slate-400 font-medium">{activeNode.content.split(/\s+/).filter(w => w.length > 0).length} words</p>
+                                </div>
+                            </div>
+                            <div className="w-full md:w-80 bg-slate-50 p-6 overflow-y-auto border-l border-slate-100">
+                                <div className="flex justify-between items-center mb-6">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Choices ({activeNode.choices.length})</label>
+                                    <button onClick={addChoice} className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-1 bg-indigo-100 px-2 py-1.5 rounded-lg shadow-sm hover:bg-indigo-200 transition-colors">
+                                        <Icon name="Plus" size={14}/> Add Choice
+                                    </button>
+                                </div>
+                                <div className="space-y-4">
+                                    {activeNode.choices.map((choice) => (
+                                        <div key={choice.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative group">
+                                            <div className="mb-3">
+                                                <label className="text-[10px] text-slate-500 font-bold block mb-1.5 uppercase tracking-wider">Button Text</label>
+                                                <input type="text" value={choice.text} onChange={(e) => updateChoice(choice.id, 'text', e.target.value)}
+                                                    className="w-full p-2 border border-slate-200 rounded text-sm focus:border-indigo-500 focus:outline-none"/>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] text-slate-500 font-bold block mb-1.5 uppercase tracking-wider">Leads To</label>
+                                                <div className="flex gap-2">
+                                                    {/* Dropdown to select an existing page */}
+                                                    <select value={choice.targetId || ''} onChange={(e) => updateChoice(choice.id, 'targetId', e.target.value || null)}
+                                                            className="flex-1 p-2 border border-slate-200 rounded text-sm focus:border-indigo-500 focus:outline-none bg-white">
+                                                        <option value="">(Ending / Not Linked)</option>
+                                                        {/* Filter out the current node to prevent self-linking */}
+                                                        {nodes.filter(n => n.id !== activeNode.id).map(n => (
+                                                            <option key={n.id} value={n.id}>{n.title}</option>
+                                                        ))}
+                                                    </select>
+                                                    {/* Button to create and link a new page instantly */}
+                                                    {!choice.targetId && (
+                                                        <button onClick={() => createNewPageForChoice(choice.id)} className="bg-indigo-100 text-indigo-700 p-2 rounded-lg hover:bg-indigo-200 transition-colors" title="Create New Page">
+                                                            <Icon name="Plus" size={16}/>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {/* Delete Choice Button */}
+                                            <button onClick={() => removeChoice(choice.id)} className="absolute -top-2 -right-2 
+                                            bg-white text-slate-400 hover:text-red-500 rounded-full p-1 shadow border border-slate-200 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                                <Icon name="X" size={14}/>
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {activeNode.choices.length === 0 && (
+                                        <div className="text-center p-6 border-2 border-dashed border-slate-300 rounded-lg bg-slate-100">
+                                            <p className="text-sm text-slate-500 font-medium">No choices. This is an ending.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        
+        // Player Component
+        const Player = ({ nodes, metadata, onEdit, isReadMode }) => {
+            const [history, setHistory] = useState(['start']);
+            
+            const currentNode = nodes.find(n => n.id === history[history.length - 1]) || nodes[0] || {};
+            
+            const handleChoice = (targetId) => {
+                if (targetId) setHistory([...history, targetId]);
+            };
+
+            const restart = () => setHistory(['start']);
+            const goBack = () => {
+                if (history.length > 1) setHistory(history.slice(0, -1));
+            };
+
+            if (!nodes || nodes.length === 0) {
+                return (
+                    <div className="max-w-2xl mx-auto text-center py-20 fade-in">
+                        <h2 className="text-2xl font-bold text-red-600 mb-4">Error: No Story Content</h2>
+                        {!isReadMode && (
+                            <>
+                                <p className="text-slate-600 mb-6">Please go back to the Builder tab to create your first scene.</p>
+                                <button onClick={onEdit} className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition">
+                                    <Icon name="Edit" size={16} className="inline-block mr-2"/> Go to Builder
+                                </button>
+                            </>
+                        )}
+                        {isReadMode && <p className="text-slate-600 mb-6">The author has not yet created any content.</p>}
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-2xl mx-auto fade-in pb-20">
+                    <div className="bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden min-h-[60vh] flex flex-col relative">
+                         {!isReadMode && onEdit && (
+                            <button onClick={onEdit} className="absolute top-4 right-4 text-slate-400 hover:text-indigo-600 z-10 p-2 bg-white/80 rounded-full backdrop-blur-sm transition-colors" title="Go back to editing">
+                                <Icon name="Edit" size={20}/>
+                            </button>
+                        )}
+                        <div className="bg-indigo-600 p-8 text-white text-center relative overflow-hidden">
+                            <div className="relative z-10">
+                                <h1 className="text-3xl font-bold font-serif mb-2">{metadata.title}</h1>
+                                <p className="text-indigo-200 text-sm font-medium">By {metadata.author} • {metadata.genre}</p>
+                            </div>
+                            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-indigo-800 opacity-50"></div>
+                        </div>
+                        <div className="p-8 md:p-12 flex-1 flex flex-col">
+                            <h2 className="text-xl font-bold text-slate-800 mb-6 pb-4 border-b border-slate-100">{currentNode.title}</h2>
+                            <div className="prose prose-slate max-w-none mb-8 flex-1">
+                                <p className="whitespace-pre-wrap text-lg leading-relaxed text-slate-700 serif-text">{currentNode.content}</p>
+                            </div>
+                            <div className="space-y-3 mt-auto">
+                                {currentNode.choices && currentNode.choices.length > 0 ?
+                                (
+                                    currentNode.choices.map(choice => (
+                                        <button key={choice.id} onClick={() => handleChoice(choice.targetId)}
+                                        disabled={!choice.targetId} 
+                                        className={`w-full p-4 text-left border-2 rounded-lg transition-all font-medium flex justify-between group 
+                                            ${choice.targetId ? 
+                                                'border-slate-100 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 cursor-pointer' : 
+                                                'border-red-100 bg-red-50 text-red-400 cursor-not-allowed opacity-80'}`}>
+                                            <span>{choice.text}</span>
+                                            <span className={`transition-opacity ${choice.targetId ? 'opacity-0 group-hover:opacity-100 text-indigo-500' : 'text-red-400'}`}>
+                                                {choice.targetId ? '→' : '(Unlinked)'}
+                                            </span>
+                                        </button>
+                                    ))
+                                ) : (
+                                    <div className="text-center py-8 bg-slate-50 rounded-lg border border-slate-200 shadow-inner">
+                                        <p className="text-slate-500 font-bold mb-4 text-lg">The End</p>
+                                        <p className="text-sm text-slate-400 mb-4">You have reached a conclusion.</p>
+                                        <button onClick={restart} className="inline-flex items-center gap-2 text-indigo-600 font-bold hover:underline">
+                                            <Icon name="Play" size={16}/> Play Again from Start
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        {history.length > 1 && (
+                            <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-between text-sm text-slate-500">
+                                <button onClick={goBack} className="hover:text-indigo-600 transition-colors flex items-center gap-1">← Back (Page {history.length - 1})</button>
+                                <span>Current Page: {history.length}</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Snapshot Viewer Component (Reads a specific public document) ---
+        const Viewer = ({ snapshotId, db, showToast, isLoading, error }) => {
+            const [metadata, setMetadata] = useState(null);
+            const [nodes, setNodes] = useState(null); 
+
+            useEffect(() => {
+                if (!db || !snapshotId) {
+                    if (db) setNodes([]); // Ready to load but no ID means empty content
+                    return;
+                }
+                
+                const { doc, getDoc } = window.firebaseTools;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                // Path points to the public, point-in-time snapshot document
+                const SNAPSHOT_DOC_PATH = `/artifacts/${appId}/public/data/snapshots/${snapshotId}`;
+                const docRef = doc(db, SNAPSHOT_DOC_PATH);
+
+                const fetchSharedStory = async () => {
+                    setNodes(null); // Show loading
+                    try {
+                        const docSnap = await getDoc(docRef);
+                        if (docSnap.exists()) {
+                            const data = docSnap.data();
+                            setMetadata(data.metadata || INITIAL_METADATA);
+                            setNodes(data.nodes || []);
+                        } else {
+                            setNodes([]); 
+                            setMetadata(INITIAL_METADATA); 
+                            showToast(`Error: Shared story snapshot not found.`);
+                        }
+                    } catch (e) {
+                        console.error("Error fetching shared story snapshot:", e);
+                        setNodes([]);
+                        setMetadata(INITIAL_METADATA); 
+                        showToast("Error reading shared story data.");
+                    }
+                };
+
+                fetchSharedStory();
+            }, [db, snapshotId]);
+
+            // Show loading if the DB isn't ready or if we are actively fetching nodes
+            if (isLoading || !db || nodes === null) {
+                return (
+                    <div className="max-w-2xl mx-auto text-center py-20 fade-in">
+                        <Icon name="Loading" size={40} className="text-indigo-600 mx-auto mb-4"/>
+                        <h2 className="text-2xl font-bold text-slate-800 mb-2">Connecting to Story...</h2>
+                        <p className="text-slate-500">Fetching content from snapshot ID: {snapshotId.substring(0, 8)}...</p>
+                    </div>
+                );
+            }
+            
+            if (error) {
+                return (
+                    <div className="max-w-2xl mx-auto text-center py-20 fade-in">
+                        <Icon name="X" size={40} className="text-red-500 mx-auto mb-4"/>
+                        <h2 className="text-2xl font-bold text-red-600 mb-2">Connection Error</h2>
+                        <p className="text-slate-600">{error}</p>
+                    </div>
+                );
+            }
+            
+            // Render the Player component in Read Mode
+            return <Player nodes={nodes} metadata={metadata} isReadMode={true} />;
+        };
+
+        // --- Dedicated Hook for Firebase Initialization ---
+        const useFirebase = () => {
+            const [db, setDb] = useState(null);
+            const [userId, setUserId] = useState(null);
+            const [isAuthReady, setIsAuthReady] = useState(false);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                if (!window.firebaseTools) {
+                    setError("Firebase tools not available.");
+                    return;
+                }
+                const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, setLogLevel } = window.firebaseTools;
+                
+                // setLogLevel('debug'); // Uncomment to debug Firebase
+
+                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    const firestore = getFirestore(app);
+                    const authInstance = getAuth(app);
+                    
+                    setDb(firestore);
+
+                    // Sign in the user (with token for editor, or anonymously for viewer/editor fallback)
+                    const authenticate = async () => {
+                        try {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(authInstance, initialAuthToken);
+                            } else {
+                                await signInAnonymously(authInstance);
+                            }
+                        } catch (e) {
+                            console.error("Firebase Auth Error:", e);
+                            setError("Authentication failed.");
+                            await signInAnonymously(authInstance); // Fallback to anonymous sign-in
+                        }
+                    };
+                    
+                    authenticate();
+
+                    // Set up Auth State Listener
+                    const unsubscribe = onAuthStateChanged(authInstance, (user) => {
+                        if (user) {
+                            setUserId(user.uid);
+                            setIsAuthReady(true);
+                            setError(null);
+                        } else {
+                            setUserId(null);
+                            setIsAuthReady(false);
+                        }
+                    });
+
+                    return () => unsubscribe();
+                } catch (e) {
+                    console.error("Firebase Initialization Failed:", e);
+                    setError("Cloud storage failed to initialize.");
+                }
+            }, []);
+            
+            const isLoading = !isAuthReady; 
+            
+            return { db, userId, isAuthReady, isLoading, error };
+        };
+
+
+        // --- Main App Component ---
+        const App = () => {
+            const queryParams = getQueryParams();
+            // Look for snapshotId instead of shareId
+            const initialSnapshotId = queryParams.snapshotId || null; 
+            
+            // If snapshotId is present, we are in Read Mode
+            const isReadMode = !!initialSnapshotId;
+
+            // Initialize Firebase 
+            const { db, userId, isAuthReady, isLoading: isFirebaseLoading, error: firebaseError } = useFirebase();
+
+            const [activeTab, setActiveTab] = useState('planner');
+            const [metadata, setMetadata] = useState(INITIAL_METADATA);
+            const [nodes, setNodes] = useState(INITIAL_NODES);
+            const [activeNodeId, setActiveNodeId] = useState('start');
+            const [toast, setToast] = useState(null);
+            const fileInputRef = useRef(null);
+            
+            // Editor Mode Specific States
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [isDataReady, setIsDataReady] = useState(isReadMode); 
+
+            const saveTimeoutRef = useRef(null); 
+
+            const showToast = (msg) => {
+                setToast(msg);
+                setTimeout(() => setToast(null), 3000);
+            };
+            
+            // Utility function to copy text to clipboard
+            const copyToClipboard = (text, message) => {
+                try {
+                    const tempInput = document.createElement('textarea');
+                    tempInput.value = text;
+                    document.body.appendChild(tempInput);
+                    tempInput.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tempInput);
+                    showToast(message || "Copied to clipboard!");
+                } catch (e) {
+                    console.error("Copy failed:", e);
+                    showToast("Copy failed, please copy manually.");
+                }
+            };
+            
+            // --- NEW: Snapshot Creation Function ---
+            const handleShare = useCallback(async () => {
+                if (!db || !userId || !isAuthReady) {
+                    showToast("Please wait for cloud connection before sharing.");
+                    return;
+                }
+
+                const { addDoc, collection } = window.firebaseTools;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                // Public collection path for snapshots
+                const SNAPSHOT_COLLECTION_PATH = `/artifacts/${appId}/public/data/snapshots`;
+                const collectionRef = collection(db, SNAPSHOT_COLLECTION_PATH);
+
+                const dataToSave = {
+                    metadata: metadata,
+                    nodes: nodes,
+                    authorId: userId,
+                    timestamp: new Date().toISOString()
+                };
+
+                try {
+                    showToast("Creating shareable snapshot...");
+                    const docRef = await addDoc(collectionRef, dataToSave);
+                    const snapshotId = docRef.id;
+                    
+                    // Generate the static share link
+                    const baseUrl = window.location.href.split('?')[0]; 
+                    const shareLink = `${baseUrl}?snapshotId=${snapshotId}`;
+                    
+                    copyToClipboard(shareLink, "Snapshot Link created and copied to clipboard!");
+                    console.log("Snapshot saved with ID:", snapshotId);
+
+                } catch (error) {
+                    console.error("Firestore Snapshot Save Error:", error);
+                    showToast("ERROR: Failed to create shareable snapshot!");
+                }
+            }, [db, userId, isAuthReady, metadata, nodes]);
+            
+            // --- File Import/Export Functions ---
+            const handleExport = () => {
+                const storyData = { metadata, nodes };
+                const jsonString = JSON.stringify(storyData, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${metadata.title.replace(/\s+/g, '_')}_CYOA.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast("Story exported as JSON file!");
+            };
+
+            const handleFileChange = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const importedData = JSON.parse(e.target.result);
+                        if (importedData.metadata && importedData.nodes) {
+                            setMetadata(importedData.metadata);
+                            setNodes(importedData.nodes);
+                            setActiveNodeId(importedData.nodes[0]?.id || 'start');
+                            showToast(`Story "${importedData.metadata.title}" imported successfully!`);
+                        } else {
+                            showToast("Import failed: Invalid story file structure.");
+                        }
+                    } catch (error) {
+                        showToast("Import failed: Could not parse JSON file.");
+                        console.error("Import error:", error);
+                    }
+                };
+                reader.readAsText(file);
+                event.target.value = null; 
+            };
+            
+            // Real-time Data Listener (Editor mode only)
+            useEffect(() => {
+                if (!db || !userId || !isAuthReady || isReadMode) return;
+
+                const { doc, onSnapshot } = window.firebaseTools;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const STORY_DOC_PATH = `/artifacts/${appId}/users/${userId}/stories/main-story`;
+                const docRef = doc(db, STORY_DOC_PATH);
+
+                const unsubscribe = onSnapshot(docRef, (docSnapshot) => {
+                    if (docSnapshot.exists()) {
+                        const data = docSnapshot.data();
+                        
+                        if (data.metadata && data.nodes && Array.isArray(data.nodes)) {
+                            const isNodesDifferent = JSON.stringify(data.nodes) !== JSON.stringify(nodes);
+                            const isMetaDifferent = JSON.stringify(data.metadata) !== JSON.stringify(metadata);
+
+                            if (isNodesDifferent || isMetaDifferent) {
+                                setMetadata(data.metadata);
+                                setNodes(data.nodes);
+                            }
+                        }
+                    } 
+                    setIsDataReady(true);
+
+                }, (error) => {
+                    console.error("Firestore onSnapshot error:", error);
+                    setIsDataReady(true);
+                    showToast("Error loading story: " + error.message);
+                });
+
+                return () => unsubscribe();
+            }, [db, userId, isAuthReady, isReadMode]);
+
+            // Save Function (Debounced Auto-Save)
+            const handleSave = useCallback(async (currentMetadata, currentNodes) => {
+                if (!db || !userId || !isAuthReady || isReadMode) return;
+
+                const { doc, setDoc } = window.firebaseTools;
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const STORY_DOC_PATH = `/artifacts/${appId}/users/${userId}/stories/main-story`;
+                const docRef = doc(db, STORY_DOC_PATH);
+
+                const dataToSave = {
+                    metadata: currentMetadata,
+                    nodes: currentNodes,
+                    lastUpdated: new Date().toISOString()
+                };
+
+                try {
+                    setIsSyncing(true);
+                    await setDoc(docRef, dataToSave);
+                    console.log("Story saved successfully to Firestore (Private).");
+                } catch (error) {
+                    console.error("Firestore Save Error (Private):", error);
+                    showToast("ERROR: Cloud auto-save failed!");
+                } finally {
+                    setIsSyncing(false);
+                }
+            }, [db, userId, isAuthReady, isReadMode]);
+
+            // Debounce Trigger for Auto-Save
+            const isInitialRender = useRef(true);
+            useEffect(() => {
+                if (isReadMode || !isDataReady) return; 
+
+                if (isInitialRender.current) {
+                    isInitialRender.current = false;
+                    return;
+                }
+                
+                if (saveTimeoutRef.current) {
+                    clearTimeout(saveTimeoutRef.current);
+                }
+
+                saveTimeoutRef.current = setTimeout(() => {
+                    handleSave(metadata, nodes);
+                }, AUTOSAVE_DELAY_MS);
+
+                return () => {
+                    if (saveTimeoutRef.current) {
+                        clearTimeout(saveTimeoutRef.current);
+                    }
+                };
+            }, [metadata, nodes, handleSave, isDataReady, isReadMode]);
+
+
+            // --- Render Logic (Viewer vs Editor) ---
+            if (isReadMode) {
+                return (
+                    <div className="min-h-screen flex flex-col">
+                        <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+                            <div className="max-w-7xl mx-auto px-4 h-16 flex items-center">
+                                <h1 className="font-bold text-indigo-600">Story Viewer <span className="text-slate-400 font-normal">| Snapshot ID: {initialSnapshotId.substring(0, 8)}...</span></h1>
+                            </div>
+                        </header>
+                        <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+                            <Viewer 
+                                snapshotId={initialSnapshotId} 
+                                db={db} 
+                                showToast={showToast} 
+                                isLoading={isFirebaseLoading}
+                                error={firebaseError}
+                            />
+                        </main>
+                        <Toast message={toast} onClose={() => setToast(null)} />
+                    </div>
+                );
+            }
+            
+            if (isFirebaseLoading || !isDataReady) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center">
+                        <div className="text-center p-8 rounded-xl bg-white shadow-xl">
+                            <Icon name="Loading" size={40} className="text-indigo-600 mx-auto mb-4"/>
+                            <h2 className="text-2xl font-bold text-slate-800 mb-2">Connecting to Cloud...</h2>
+                            <p className="text-slate-500">Authenticating and loading your saved story.</p>
+                            {firebaseError && <p className="text-red-500 mt-4 text-sm">{firebaseError}</p>}
+                        </div>
+                    </div>
+                );
+            }
+
+            // Editor Mode
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* Header/Navigation */}
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+                        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-serif font-bold text-xl shadow-md">S</div>
+                                <h1 className="font-bold text-slate-800 hidden sm:block">StoryBuilder <span className="text-slate-400 font-normal">| Cloud Editor</span></h1>
+                            </div>
+                            
+                            {/* Tab Navigation */}
+                            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shadow-inner">
+                                <button onClick={() => setActiveTab('planner')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'planner' ?
+                                'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                                    1. Plan
+                                </button>
+                                <button onClick={() => setActiveTab('builder')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'builder' ?
+                                'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                                    2. Build
+                                </button>
+                                <button onClick={() => setActiveTab('player')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all 
+                                ${activeTab === 'player' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                                    3. Preview
+                                </button>
+                            </div>
+
+                            {/* Cloud Status and Share Tools */}
+                            <div className="flex items-center gap-3">
+                                {/* Share/Export Tools */}
+                                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shadow-inner">
+                                    <button 
+                                        onClick={handleShare} 
+                                        className="text-slate-500 hover:text-indigo-600 p-2 rounded-lg hover:bg-white transition-colors" 
+                                        title="Create and Copy Static Share Link">
+                                        <Icon name="Share2" size={20}/>
+                                    </button>
+                                    <button 
+                                        onClick={handleExport} 
+                                        className="text-slate-500 hover:text-indigo-600 p-2 rounded-lg hover:bg-white transition-colors" 
+                                        title="Export Story as JSON file">
+                                        <Icon name="Download" size={20}/>
+                                    </button>
+                                    <button 
+                                        onClick={() => fileInputRef.current.click()}
+                                        className="text-slate-500 hover:text-indigo-600 p-2 rounded-lg hover:bg-white transition-colors" 
+                                        title="Import Story from JSON File">
+                                        <Icon name="Upload" size={20}/>
+                                    </button>
+                                    <input 
+                                        type="file" 
+                                        ref={fileInputRef} 
+                                        onChange={handleFileChange} 
+                                        accept=".json" 
+                                        className="hidden" 
+                                    />
+                                </div>
+
+                                {/* Cloud Status */}
+                                <div className={`text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-2 transition-all duration-300 ${
+                                    isSyncing ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
+                                }`} title={isSyncing ? `Auto-saving... (Next save in ${AUTOSAVE_DELAY_MS/1000}s of inactivity)` : "Saved to Cloud"}>
+                                    {isSyncing ? <Icon name="Loading" size={14}/> : <Icon name="Save" size={14}/>}
+                                    {isSyncing ? 'Syncing...' : 'Cloud Saved'}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span className="text-xs text-slate-400 hidden lg:block">User ID: {userId ? `${userId.substring(0, 8)}...` : 'N/A'}</span>
+                                    {userId && (
+                                        <button onClick={() => copyToClipboard(userId, "Your Editor User ID copied!")} className="text-slate-400 hover:text-indigo-600 p-1 rounded transition-colors" title="Copy Your Editor User ID (For debugging)">
+                                            <Icon name="Copy" size={14}/>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Content Area */}
+                    <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+                        {activeTab === 'planner' && <Planner metadata={metadata} setMetadata={setMetadata} isReadMode={false} />}
+                        {activeTab === 'builder' && <Builder nodes={nodes} setNodes={setNodes} activeNodeId={activeNodeId} setActiveNodeId={setActiveNodeId} 
+                        showToast={showToast} isAuthReady={isAuthReady} />}
+                        {activeTab === 'player' && <Player nodes={nodes} metadata={metadata} onEdit={() => setActiveTab('builder')} isReadMode={false} />}
+                    </main>
+
+                    <Toast message={toast} onClose={() => setToast(null)} />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
