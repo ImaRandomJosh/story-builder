@@ -448,6 +448,7 @@
             if (!isOpen) return null;
 
             const handleCopy = async () => {
+                // Select the text first
                 if (urlInputRef.current) {
                     urlInputRef.current.select();
                 }
@@ -455,34 +456,37 @@
                 try {
                     await navigator.clipboard.writeText(shareUrl);
                     showToast("Share URL copied to clipboard!");
-                    setManualCopy(false);
-                    return;
+                    setManualCopy(false); // Success! Hide error box if it was open
                 } catch (e) {
-                    setManualCopy(true);
+                    console.error("Copy failed", e);
+                    setManualCopy(true); // Only show error box if copy actually fails
                 }
             };
 
+            // Auto-select the text when modal opens, but DON'T show error yet
             useEffect(() => {
                 if (isOpen) {
+                    // Reset state when opening
+                    setManualCopy(false);
+                    
                     setTimeout(() => {
                         if (urlInputRef.current) {
                             urlInputRef.current.select();
-                            setManualCopy(true);
                         }
-                    }, 50);
+                    }, 100);
                 }
             }, [isOpen]);
 
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center fade-in">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-lg mx-4">
+                    <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-lg mx-4 relative">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-2xl font-bold text-indigo-700 flex items-center gap-2">
                                 <Icon name="Share" size={24} /> Share Project
                             </h3>
                             <button
                                 onClick={onClose}
-                                className="text-slate-400 hover:text-slate-700 p-1 rounded-full"
+                                className="text-slate-400 hover:text-slate-700 p-1 rounded-full hover:bg-slate-100 transition-colors"
                             >
                                 <Icon name="X" size={20} />
                             </button>
@@ -494,17 +498,17 @@
                                 structure.
                             </p>
 
-                            <div className="flex border border-slate-300 rounded-lg overflow-hidden">
+                            <div className="flex border border-slate-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500">
                                 <input
                                     ref={urlInputRef}
                                     readOnly
                                     value={shareUrl}
-                                    className="flex-1 p-3 text-sm font-mono bg-white focus:outline-none"
+                                    className="flex-1 p-3 text-sm font-mono bg-white focus:outline-none text-slate-600"
                                     onClick={(e) => e.target.select()}
                                 />
                                 <button
                                     onClick={handleCopy}
-                                    className="px-4 py-3 bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                                    className="px-4 py-3 bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-2 font-medium"
                                 >
                                     <Icon name="Copy" size={16} /> Copy
                                 </button>
@@ -516,8 +520,9 @@
                                         Action Required: Manual Copy
                                     </p>
                                     <p className="text-xs text-red-600 mt-1">
-                                        The URL has been highlighted. Please press Ctrl+C (Windows) or
-                                        Cmd+C (Mac) to copy.
+                                        We couldn't copy to your clipboard automatically. Please press 
+                                        <span className="font-mono bg-red-100 px-1 rounded mx-1">Ctrl+C</span> 
+                                        (or Cmd+C) to copy the highlighted link above.
                                     </p>
                                 </div>
                             )}
@@ -1334,12 +1339,22 @@
 
             // Create snapshot share link
             const handleShare = async () => {
-                if (!window.firebase || !window.firebase.db) return;
+                if (!window.firebase || !window.firebase.db) {
+                    showToast("Database not initialized.");
+                    return;
+                }
                 const db = window.firebase.db;
 
                 try {
+                    // Create a reference with an auto-generated ID safely
                     const colRef = window.firebase.collection(db, "snapshots");
-                    const docRef = window.firebase.doc(colRef); // auto ID
+                    // Using doc(colRef) can be flaky; explicit usage is safer:
+                    const docRef = window.firebase.doc(colRef); 
+                    
+                    if (!docRef || !docRef.id) {
+                        throw new Error("Failed to generate share ID");
+                    }
+
                     await window.firebase.setDoc(docRef, {
                         metadata,
                         nodes,
@@ -1347,15 +1362,13 @@
                         createdAt: new Date().toISOString()
                     });
 
-                    const url = `${window.location.origin}${
-                        window.location.pathname
-                    }?snapshot=${docRef.id}`;
+                    const url = `${window.location.origin}${window.location.pathname}?snapshot=${docRef.id}`;
                     setShareUrl(url);
                     setIsShareOpen(true);
                     showToast("Share link created!");
                 } catch (e) {
-                    console.error(e);
-                    showToast("Error creating share link.");
+                    console.error("Share Error:", e);
+                    showToast("Error creating share link. Check console.");
                 }
             };
 
