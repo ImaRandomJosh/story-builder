@@ -2,1572 +2,862 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Creating CYOA - Grade 7 Story Builder</title>
+    <title>StoryBuilder | Grade 7</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- React + Babel + Tailwind -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- Fonts -->
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Merriweather:ital,wght@0,300;0,700;1,400&display=swap"
-        rel="stylesheet"
-    />
+    <!-- React + ReactDOM UMD -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
 
-    <style>
-        body {
-            font-family: "Inter", sans-serif;
-            background-color: #f3f4f6;
-        }
-        .serif-text {
-            font-family: "Merriweather", serif;
-        }
-        .fade-in {
-            animation: fadeIn 0.3s ease-in;
-        }
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
-        }
+    <!-- Babel for in-browser JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-
-        /* Custom spinner for syncing */
-        .sync-spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #6366f1;
-            border-radius: 50%;
-            width: 14px;
-            height: 14px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
-            100% {
-                transform: rotate(360deg);
-            }
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-
-    <!-- FIREBASE SETUP (MODULE SCRIPT) -->
+    <!-- Firebase (modular v11) -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
         import {
             getAuth,
             signInAnonymously,
             onAuthStateChanged,
-            GoogleAuthProvider,
-            signInWithPopup,
-            linkWithPopup,
-            signOut,
             setPersistence,
             browserLocalPersistence
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import {
             getFirestore,
             doc,
-            setDoc,
             getDoc,
+            setDoc,
             onSnapshot,
-            collection
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+            collection,
+            addDoc
+        } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-        // Your Firebase config (from your console)
+        // Your existing Firebase project config :contentReference[oaicite:0]{index=0}
         const firebaseConfig = {
-            apiKey: "AIzaSyBGGLJcXB0xiVJ1L6iQkg765rCxwjFj-ho",
-            authDomain: "story-builder-7e201.firebaseapp.com",
-            projectId: "story-builder-7e201",
-            storageBucket: "story-builder-7e201.firebasestorage.app",
-            messagingSenderId: "275747156",
-            appId: "1:275747156:web:0a677fe6073a49936578c1",
-            measurementId: "G-0KPYMPBV4C"
+            apiKey: "AIzaSyCyIvXW4_5rxzZK2PkgyERjyelopk6ZGJo",
+            authDomain: "choose-your-own-adventure-3464e.firebaseapp.com",
+            projectId: "choose-your-own-adventure-3464e",
+            storageBucket: "choose-your-own-adventure-3464e.appspot.com",
+            messagingSenderId: "1078809830062",
+            appId: "1:1078809830062:web:15b358b9385fb2931d0822"
         };
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // Start with anonymous auth so saving works immediately
-        async function initAuth() {
-            try {
-                await setPersistence(auth, browserLocalPersistence);
-                if (!auth.currentUser) {
-                    await signInAnonymously(auth);
-                }
-            } catch (err) {
-                console.error("Auth init error:", err);
-            }
-        }
-        initAuth();
+        setPersistence(auth, browserLocalPersistence).catch(console.error);
 
-        // Expose Firebase to the React app
+        // Expose Firebase primitives to the React app
         window.firebase = {
+            app,
             auth,
             db,
-            onAuthStateChanged,
             signInAnonymously,
-            GoogleAuthProvider,
-            signInWithPopup,
-            linkWithPopup,
-            signOut,
-            setDoc,
-            getDoc,
+            onAuthStateChanged,
             doc,
+            getDoc,
+            setDoc,
             onSnapshot,
-            collection
+            collection,
+            addDoc
         };
     </script>
 
-    <!-- REACT APP -->
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+    <style>
+        body {
+            @apply bg-slate-100;
+        }
+        .fade-in {
+            animation: fade-in 0.2s ease-out;
+        }
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-100">
+<div id="root"></div>
 
-        // --- Global Constants & Initial Data ---
-        const INITIAL_METADATA = {
-            title: "My Interactive Story",
-            author: "A Grade 7 Author",
-            genre: "Fantasy",
-            goal: "Define your main character’s central desire or quest.",
-            conflict:
-                "Define the challenge or antagonist that prevents the goal from being easily met."
-        };
+<script type="text/babel" data-presets="react,env">
+    const { useState, useEffect, useRef } = React;
 
-        const SAMPLE_NODE = {
+    // ----- Initial Data -----
+    const INITIAL_METADATA = {
+        title: "Untitled Adventure",
+        author: "",
+        grade: "7",
+        genre: "",
+        summary: "Describe your choose-your-own adventure here."
+    };
+
+    const INITIAL_NODES = [
+        {
             id: "start",
             title: "The Beginning",
-            content:
-                "Set the scene here. Describe the setting (where your character is) and the first challenge or decision they must face to begin their journey.\n\n[PROMPT: Describe your character’s immediate surroundings using sensory details (sight, sound, sound).]",
+            content: "Write the first scene of your adventure.",
             choices: [
-                { id: "c1", text: "Write the first choice here (e.g., Go left)", targetId: null },
-                { id: "c2", text: "Write the second choice here (e.g., Go right)", targetId: null }
+                { id: "c1", text: "Add a choice in the Builder tab.", targetId: "" }
             ]
+        }
+    ];
+
+    // ----- Small helper components -----
+    const Tag = ({ children }) => (
+        <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+            {children}
+        </span>
+    );
+
+    const TabButton = ({ active, children, onClick }) => (
+        <button
+            onClick={onClick}
+            className={
+                "px-4 py-2 text-sm font-semibold rounded-full transition-colors " +
+                (active
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100")
+            }
+        >
+            {children}
+        </button>
+    );
+
+    // ----- Planner -----
+    function Planner({ metadata, setMetadata, readOnly }) {
+        const update = (field, value) => {
+            if (readOnly) return;
+            setMetadata(prev => ({ ...prev, [field]: value }));
         };
 
-        const INITIAL_NODES = [SAMPLE_NODE];
-
-        // --- Utility Functions (Icons, Toast) ---
-        const Icon = ({ name, size = 20, className = "" }) => {
-            const icons = {
-                BookOpen: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-                    </svg>
-                ),
-                Map: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
-                        <line x1="8" y1="2" x2="8" y2="18" />
-                        <line x1="16" y1="6" x2="16" y2="22" />
-                    </svg>
-                ),
-                Share: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                        <polyline points="16 6 12 2 8 6" />
-                        <line x1="12" y1="2" x2="12" y2="15" />
-                    </svg>
-                ),
-                Play: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <polygon points="5 3 19 12 5 21 5 3" />
-                    </svg>
-                ),
-                Plus: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <line x1="12" y1="5" x2="12" y2="19" />
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                ),
-                Check: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                ),
-                Link: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <path
-                            d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
-                        />
-                        <path
-                            d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
-                        />
-                    </svg>
-                ),
-                X: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                ),
-                Trash: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <polyline points="3 6 5 6 21 6" />
-                        <path
-                            d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                        />
-                    </svg>
-                ),
-                Copy: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                        <path
-                            d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
-                        />
-                    </svg>
-                ),
-                Edit: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <path
-                            d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
-                        />
-                        <path
-                            d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
-                        />
-                    </svg>
-                ),
-                Refresh: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <polyline points="23 4 23 10 17 10" />
-                        <polyline points="1 20 1 14 7 14" />
-                        <path
-                            d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
-                        />
-                    </svg>
-                ),
-                Download: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <path
-                            d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
-                        />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                ),
-                Upload: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <path
-                            d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
-                        />
-                        <polyline points="17 8 12 3 7 8" />
-                        <line x1="12" y1="3" x2="12" y2="15" />
-                    </svg>
-                ),
-                CloudOff: (
-                    <svg
-                        width={size}
-                        height={size}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                    >
-                        <line x1="1" y1="1" x2="23" y2="23"></line>
-                        <path
-                            d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 7h1.8a5 5 0 0 0 1.8 1.18l2.44-2.44A2.99 2.99 0 0 1 15 11a3 3 0 0 1 3 3"
-                        ></path>
-                        <path d="M9 16a5 5 0 0 0 6.63.16"></path>
-                    </svg>
-                )
-            };
-            return <div className={className}>{icons[name] || icons.BookOpen}</div>;
-        };
-
-        const Toast = ({ message, onClose }) => {
-            if (!message) return null;
-            return (
-                <div className="fixed bottom-4 right-4 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 fade-in z-50 border border-slate-700">
-                    <span className="font-medium">{message}</span>
-                    <button
-                        onClick={onClose}
-                        className="hover:text-slate-300 opacity-70 hover:opacity-100"
-                    >
-                        <Icon name="X" size={16} />
-                    </button>
-                </div>
-            );
-        };
-
-        const ShareModal = ({ isOpen, onClose, shareUrl, showToast }) => {
-            const urlInputRef = useRef(null);
-            const [manualCopy, setManualCopy] = useState(false);
-
-            if (!isOpen) return null;
-
-            const handleCopy = async () => {
-                // Select the text first
-                if (urlInputRef.current) {
-                    urlInputRef.current.select();
-                }
-
-                try {
-                    await navigator.clipboard.writeText(shareUrl);
-                    showToast("Share URL copied to clipboard!");
-                    setManualCopy(false); // Success! Hide error box if it was open
-                } catch (e) {
-                    console.error("Copy failed", e);
-                    setManualCopy(true); // Only show error box if copy actually fails
-                }
-            };
-
-            // Auto-select the text when modal opens, but DON'T show error yet
-            useEffect(() => {
-                if (isOpen) {
-                    // Reset state when opening
-                    setManualCopy(false);
-                    
-                    setTimeout(() => {
-                        if (urlInputRef.current) {
-                            urlInputRef.current.select();
-                        }
-                    }, 100);
-                }
-            }, [isOpen]);
-
-            return (
-                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center fade-in">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-lg mx-4 relative">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-2xl font-bold text-indigo-700 flex items-center gap-2">
-                                <Icon name="Share" size={24} /> Share Project
-                            </h3>
-                            <button
-                                onClick={onClose}
-                                className="text-slate-400 hover:text-slate-700 p-1 rounded-full hover:bg-slate-100 transition-colors"
-                            >
-                                <Icon name="X" size={20} />
-                            </button>
-                        </div>
-
-                        <div className="space-y-4 mb-6">
-                            <p className="text-sm text-slate-700 leading-relaxed">
-                                Share this link to let others read your story and see your plan and
-                                structure.
-                            </p>
-
-                            <div className="flex border border-slate-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500">
-                                <input
-                                    ref={urlInputRef}
-                                    readOnly
-                                    value={shareUrl}
-                                    className="flex-1 p-3 text-sm font-mono bg-white focus:outline-none text-slate-600"
-                                    onClick={(e) => e.target.select()}
-                                />
-                                <button
-                                    onClick={handleCopy}
-                                    className="px-4 py-3 bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-2 font-medium"
-                                >
-                                    <Icon name="Copy" size={16} /> Copy
-                                </button>
-                            </div>
-
-                            {manualCopy && (
-                                <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg mt-4 fade-in">
-                                    <p className="text-sm text-red-700 font-bold">
-                                        Action Required: Manual Copy
-                                    </p>
-                                    <p className="text-xs text-red-600 mt-1">
-                                        We couldn't copy to your clipboard automatically. Please press 
-                                        <span className="font-mono bg-red-100 px-1 rounded mx-1">Ctrl+C</span> 
-                                        (or Cmd+C) to copy the highlighted link above.
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const Checklist = () => (
-            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-5 mb-8 rounded-r-lg shadow-sm">
-                <h3 className="font-bold text-yellow-800 flex items-center gap-2 text-lg">
-                    <Icon name="Check" size={20} /> Grade 7 Writer&apos;s Checklist
-                </h3>
-                <ul className="mt-3 text-sm text-yellow-800 space-y-2 ml-1">
-                    <li className="flex gap-2">
-                        <span className="font-bold">• Voice:</span> Does your narrator sound
-                        consistent throughout?
-                    </li>
-                    <li className="flex gap-2">
-                        <span className="font-bold">• Sensory Details:</span> Describe what you
-                        see, hear, smell, and feel.
-                    </li>
-                    <li className="flex gap-2">
-                        <span className="font-bold">• Organization:</span> Do the choices make
-                        logical sense for the character?
-                    </li>
-                    <li className="flex gap-2">
-                        <span className="font-bold">• Conventions:</span> Check your spelling,
-                        punctuation, and grammar.
-                    </li>
-                </ul>
-            </div>
-        );
-
-        const Planner = ({ metadata, setMetadata, isReadOnly }) => {
-            const GENRES = [
-                "Fantasy",
-                "Sci-Fi",
-                "Mystery",
-                "Survival",
-                "Historical Fiction",
-                "Horror",
-                "Comedy"
-            ];
-            return (
-                <div className="max-w-3xl mx-auto fade-in pb-12">
-                    <h2 className="text-3xl font-extrabold text-slate-800 mb-6 tracking-tight">
-                        Step 1: The Blueprint
+        return (
+            <div className="grid md:grid-cols-2 gap-6 fade-in">
+                <div className="bg-white rounded-xl shadow-sm p-6 border border-slate-200">
+                    <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        Story Plan <Tag>Section 1</Tag>
                     </h2>
-                    <Checklist />
-                    <div className="grid gap-6">
-                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                            <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">
-                                Story Title
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                Title
                             </label>
                             <input
                                 type="text"
                                 value={metadata.title}
-                                disabled={isReadOnly}
-                                onChange={(e) => {
-                                    if (isReadOnly) return;
-                                    setMetadata({ ...metadata, title: e.target.value });
-                                }}
-                                className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-xl font-bold text-slate-800 disabled:bg-slate-50"
-                                placeholder="e.g. The Mystery of the Missing Key"
+                                disabled={readOnly}
+                                onChange={e => update("title", e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             />
                         </div>
-                        <div className="grid md:grid-cols-2 gap-6">
-                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                                <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">
                                     Author
                                 </label>
                                 <input
                                     type="text"
                                     value={metadata.author}
-                                    disabled={isReadOnly}
-                                    onChange={(e) => {
-                                        if (isReadOnly) return;
-                                        setMetadata({ ...metadata, author: e.target.value });
-                                    }}
-                                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50"
+                                    disabled={readOnly}
+                                    onChange={e => update("author", e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                             </div>
-                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                                <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">
                                     Genre
-                                </label>
-                                <select
-                                    value={metadata.genre}
-                                    disabled={isReadOnly}
-                                    onChange={(e) => {
-                                        if (isReadOnly) return;
-                                        setMetadata({ ...metadata, genre: e.target.value });
-                                    }}
-                                    className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white disabled:bg-slate-50"
-                                >
-                                    {GENRES.map((g) => (
-                                        <option key={g} value={g}>
-                                            {g}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                            <h3 className="font-bold text-slate-800 mb-4 text-lg">The Narrative Arc</h3>
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">
-                                        The Goal
-                                    </label>
-                                    <textarea
-                                        className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 h-24 disabled:bg-slate-50"
-                                        value={metadata.goal}
-                                        disabled={isReadOnly}
-                                        onChange={(e) => {
-                                            if (isReadOnly) return;
-                                            setMetadata({ ...metadata, goal: e.target.value });
-                                        }}
-                                    ></textarea>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">
-                                        The Conflict
-                                    </label>
-                                    <textarea
-                                        className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 h-24 disabled:bg-slate-50"
-                                        value={metadata.conflict}
-                                        disabled={isReadOnly}
-                                        onChange={(e) => {
-                                            if (isReadOnly) return;
-                                            setMetadata({
-                                                ...metadata,
-                                                conflict: e.target.value
-                                            });
-                                        }}
-                                    ></textarea>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const Builder = ({
-            nodes,
-            setNodes,
-            activeNodeId,
-            setActiveNodeId,
-            showToast,
-            isReadOnly
-        }) => {
-            const [deleteConfirmId, setDeleteConfirmId] = useState(null);
-            const activeNode = nodes.find((n) => n.id === activeNodeId) || nodes[0];
-
-            const updateNode = (field, value) => {
-                if (isReadOnly) return;
-                setNodes(
-                    nodes.map((n) => (n.id === activeNodeId ? { ...n, [field]: value } : n))
-                );
-            };
-
-            const addChoice = () => {
-                if (isReadOnly) return;
-                const newChoice = {
-                    id: Date.now().toString(),
-                    text: "New Option",
-                    targetId: null
-                };
-                updateNode("choices", [...activeNode.choices, newChoice]);
-            };
-
-            const updateChoice = (choiceId, field, value) => {
-                if (isReadOnly) return;
-                const updatedChoices = activeNode.choices.map((c) =>
-                    c.id === choiceId ? { ...c, [field]: value } : c
-                );
-                updateNode("choices", updatedChoices);
-            };
-
-            const removeChoice = (choiceId) => {
-                if (isReadOnly) return;
-                updateNode(
-                    "choices",
-                    activeNode.choices.filter((c) => c.id !== choiceId)
-                );
-            };
-
-            const createNewPageForChoice = (choiceId) => {
-                if (isReadOnly) return;
-                const newPageId = "page-" + Date.now();
-                const newPage = {
-                    id: newPageId,
-                    title: "New Scene",
-                    content: "Write what happens next...",
-                    choices: []
-                };
-                setNodes([...nodes, newPage]);
-                updateChoice(choiceId, "targetId", newPageId);
-                setTimeout(() => setActiveNodeId(newPageId), 100);
-                showToast("New page created & linked!");
-            };
-
-            const deleteNode = (id) => {
-                if (isReadOnly) return;
-                if (nodes.length <= 1) {
-                    showToast("You can't delete the only page!");
-                    return;
-                }
-                const newNodes = nodes.filter((n) => n.id !== id);
-                const cleanedNodes = newNodes.map((n) => ({
-                    ...n,
-                    choices: n.choices.map((c) => ({
-                        ...c,
-                        targetId: c.targetId === id ? null : c.targetId
-                    }))
-                }));
-
-                setNodes(cleanedNodes);
-                setActiveNodeId(cleanedNodes[0].id);
-                setDeleteConfirmId(null);
-                showToast("Page deleted and links updated.");
-            };
-
-            return (
-                <div className="flex h-[calc(100vh-140px)] gap-4 fade-in">
-                    {/* Left Sidebar: Page List */}
-                    <div className="w-1/4 min-w-[250px] bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                        <div className="p-4 bg-slate-50 border-b border-slate-200 font-bold text-slate-700 flex justify-between items-center">
-                            <span>Your Pages</span>
-                            <span className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full font-bold">
-                                {nodes.length} Scenes
-                            </span>
-                        </div>
-                        <div className="overflow-y-auto flex-1 p-3 space-y-2">
-                            {nodes.map((node) => {
-                                const isLinked = nodes.some((n) =>
-                                    n.choices.some((c) => c.targetId === node.id)
-                                );
-                                const isStart = node.id === "start";
-                                return (
-                                    <div
-                                        key={node.id}
-                                        onClick={() => setActiveNodeId(node.id)}
-                                        className={`p-3 rounded-lg cursor-pointer text-sm border transition-all ${
-                                            activeNodeId === node.id
-                                                ? "bg-indigo-50 border-indigo-500 shadow-md transform scale-[1.02]"
-                                                : "bg-white border-slate-200 hover:bg-slate-50"
-                                        }`}
-                                    >
-                                        <div className="font-bold text-slate-800 truncate">
-                                            {node.title}
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                                            {isStart && (
-                                                <span className="text-[10px] uppercase font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
-                                                    Start
-                                                </span>
-                                            )}
-                                            {node.choices.length === 0 && !isStart && (
-                                                <span className="text-[10px] uppercase font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded">
-                                                    Ending
-                                                </span>
-                                            )}
-                                            {!isLinked && !isStart && (
-                                                <span className="text-[10px] uppercase font-bold bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">
-                                                    Unlinked
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <div className="p-3 border-t bg-slate-50">
-                            {!isReadOnly && (
-                                <button
-                                    onClick={() => {
-                                        const newId = "page-" + Date.now();
-                                        setNodes([
-                                            ...nodes,
-                                            {
-                                                id: newId,
-                                                title: "New Scene",
-                                                content: "",
-                                                choices: []
-                                            }
-                                        ]);
-                                        setActiveNodeId(newId);
-                                    }}
-                                    className="w-full py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold flex justify-center items-center gap-2 shadow-sm"
-                                >
-                                    <Icon name="Plus" size={16} /> New Independent Page
-                                </button>
-                            )}
-                            {isReadOnly && (
-                                <p className="text-[11px] text-slate-400 text-center">
-                                    Read-only mode: you can browse pages but not edit.
-                                </p>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Editor Area */}
-                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
-                            <div className="w-2/3">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                    Scene Title
                                 </label>
                                 <input
                                     type="text"
-                                    value={activeNode.title}
-                                    readOnly={isReadOnly}
-                                    onChange={(e) => {
-                                        if (isReadOnly) return;
-                                        updateNode("title", e.target.value);
-                                    }}
-                                    className="text-2xl font-bold text-slate-800 w-full focus:outline-none bg-transparent placeholder-slate-300 disabled:bg-slate-50"
+                                    value={metadata.genre}
+                                    disabled={readOnly}
+                                    onChange={e => update("genre", e.target.value)}
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                             </div>
-                            {activeNode.id !== "start" && !isReadOnly && (
-                                <div className="flex items-center">
-                                    {deleteConfirmId === activeNode.id ? (
-                                        <div className="flex items-center gap-2 bg-red-50 p-1.5 rounded-lg border border-red-100">
-                                            <span className="text-xs text-red-700 font-bold">
-                                                Delete?
-                                            </span>
-                                            <button
-                                                onClick={() => deleteNode(activeNode.id)}
-                                                className="text-xs bg-red-600 text-white px-3 py-1 rounded"
-                                            >
-                                                Yes
-                                            </button>
-                                            <button
-                                                onClick={() => setDeleteConfirmId(null)}
-                                                className="text-xs text-slate-500 px-2"
-                                            >
-                                                No
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={() => setDeleteConfirmId(activeNode.id)}
-                                            className="text-slate-400 hover:text-red-600 p-2"
-                                        >
-                                            <Icon name="Trash" size={20} />
-                                        </button>
-                                    )}
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                Summary
+                            </label>
+                            <textarea
+                                rows="4"
+                                value={metadata.summary}
+                                disabled={readOnly}
+                                onChange={e => update("summary", e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white rounded-xl shadow-sm p-6 border border-slate-200">
+                    <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        Teacher Checklist
+                    </h2>
+                    <ul className="space-y-2 text-sm text-slate-600">
+                        <li>• Clear beginning, branching middle, and at least one ending.</li>
+                        <li>• Every choice leads to another page or a conclusion.</li>
+                        <li>• Second person (“you”) point of view.</li>
+                        <li>• Correct punctuation and paragraphing for dialogue.</li>
+                    </ul>
+                </div>
+            </div>
+        );
+    }
+
+    // ----- Builder -----
+    function Builder({ nodes, setNodes, activeNodeId, setActiveNodeId, readOnly }) {
+        const activeNode = nodes.find(n => n.id === activeNodeId) || nodes[0];
+
+        const updateNodeField = (field, value) => {
+            if (readOnly) return;
+            setNodes(prev =>
+                prev.map(node =>
+                    node.id === activeNode.id ? { ...node, [field]: value } : node
+                )
+            );
+        };
+
+        const updateChoice = (choiceId, field, value) => {
+            if (readOnly) return;
+            setNodes(prev =>
+                prev.map(node =>
+                    node.id === activeNode.id
+                        ? {
+                              ...node,
+                              choices: node.choices.map(c =>
+                                  c.id === choiceId ? { ...c, [field]: value } : c
+                              )
+                          }
+                        : node
+                )
+            );
+        };
+
+        const addChoice = () => {
+            if (readOnly) return;
+            const newChoice = {
+                id: "choice_" + Date.now(),
+                text: "New choice",
+                targetId: ""
+            };
+            setNodes(prev =>
+                prev.map(node =>
+                    node.id === activeNode.id
+                        ? { ...node, choices: [...node.choices, newChoice] }
+                        : node
+                )
+            );
+        };
+
+        const addNode = () => {
+            if (readOnly) return;
+            const newId = "node_" + Date.now();
+            const newNode = {
+                id: newId,
+                title: "New Page",
+                content: "Write the scene here.",
+                choices: []
+            };
+            setNodes(prev => [...prev, newNode]);
+            setActiveNodeId(newId);
+        };
+
+        return (
+            <div className="grid md:grid-cols-[260px,1fr] gap-4 fade-in">
+                {/* Sidebar list of pages */}
+                <div className="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-slate-800">Pages</h3>
+                        {!readOnly && (
+                            <button
+                                onClick={addNode}
+                                className="text-xs font-semibold text-indigo-600 hover:underline"
+                            >
+                                + Add
+                            </button>
+                        )}
+                    </div>
+                    <div className="space-y-1 max-h-[420px] overflow-y-auto">
+                        {nodes.map(node => (
+                            <button
+                                key={node.id}
+                                onClick={() => setActiveNodeId(node.id)}
+                                className={
+                                    "w-full text-left px-3 py-2 rounded-lg text-sm border transition-colors " +
+                                    (node.id === activeNode.id
+                                        ? "bg-indigo-50 border-indigo-400 text-indigo-700 font-semibold"
+                                        : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100")
+                                }
+                            >
+                                {node.title || "(Untitled Page)"}
+                                {node.id === "start" && (
+                                    <span className="ml-2 text-[10px] uppercase tracking-wide text-emerald-600">
+                                        Start
+                                    </span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Editor for current page */}
+                <div className="bg-white rounded-xl shadow-sm p-6 border border-slate-200 flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                        <input
+                            type="text"
+                            value={activeNode.title}
+                            disabled={readOnly}
+                            onChange={e => updateNodeField("title", e.target.value)}
+                            className="text-lg font-bold text-slate-800 flex-1 border-0 border-b border-transparent focus:border-indigo-500 focus:ring-0 px-0"
+                        />
+                        <Tag>Page ID: {activeNode.id}</Tag>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">
+                            Page Text
+                        </label>
+                        <textarea
+                            rows="8"
+                            value={activeNode.content}
+                            disabled={readOnly}
+                            onChange={e => updateNodeField("content", e.target.value)}
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                    </div>
+                    <div>
+                        <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-semibold text-slate-500">
+                                Choices
+                            </span>
+                            {!readOnly && (
+                                <button
+                                    onClick={addChoice}
+                                    className="text-xs font-semibold text-indigo-600 hover:underline"
+                                >
+                                    + Add Choice
+                                </button>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            {activeNode.choices.map(choice => (
+                                <div
+                                    key={choice.id}
+                                    className="flex flex-col md:flex-row gap-2 items-stretch md:items-center bg-slate-50 border border-slate-200 rounded-lg p-2"
+                                >
+                                    <input
+                                        type="text"
+                                        value={choice.text}
+                                        disabled={readOnly}
+                                        onChange={e =>
+                                            updateChoice(choice.id, "text", e.target.value)
+                                        }
+                                        className="flex-1 border border-slate-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="Choice text"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={choice.targetId}
+                                        disabled={readOnly}
+                                        onChange={e =>
+                                            updateChoice(choice.id, "targetId", e.target.value)
+                                        }
+                                        className="w-32 border border-slate-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="Target ID"
+                                    />
+                                </div>
+                            ))}
+                            {activeNode.choices.length === 0 && (
+                                <p className="text-xs text-slate-500">
+                                    No choices yet. Add at least one so the reader can continue.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // ----- Player (Preview) -----
+    function Player({ nodes, metadata }) {
+        const [currentId, setCurrentId] = useState("start");
+        const [history, setHistory] = useState(["start"]);
+
+        const currentNode = nodes.find(n => n.id === currentId) || nodes[0];
+
+        const choose = targetId => {
+            if (!targetId) return;
+            setCurrentId(targetId);
+            setHistory(prev => [...prev, targetId]);
+        };
+
+        const goBack = () => {
+            if (history.length <= 1) return;
+            const newHist = history.slice(0, -1);
+            setHistory(newHist);
+            setCurrentId(newHist[newHist.length - 1]);
+        };
+
+        const restart = () => {
+            setCurrentId("start");
+            setHistory(["start"]);
+        };
+
+        return (
+            <div className="max-w-3xl mx-auto fade-in">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-200">
+                        <h2 className="text-xl font-bold text-slate-800">
+                            {metadata.title || "Untitled Adventure"}
+                        </h2>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Click choices to move through the story.
+                        </p>
+                    </div>
+                    <div className="px-6 py-6 space-y-6">
+                        <h3 className="text-lg font-semibold text-slate-800">
+                            {currentNode.title}
+                        </h3>
+                        <p className="text-slate-700 whitespace-pre-wrap leading-relaxed">
+                            {currentNode.content}
+                        </p>
+                        <div className="space-y-2">
+                            {currentNode.choices && currentNode.choices.length > 0 ? (
+                                currentNode.choices.map(choice => (
+                                    <button
+                                        key={choice.id}
+                                        disabled={!choice.targetId}
+                                        onClick={() => choose(choice.targetId)}
+                                        className={
+                                            "w-full text-left px-4 py-3 rounded-lg text-sm border-2 transition-all " +
+                                            (choice.targetId
+                                                ? "border-slate-100 hover:border-indigo-500 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700"
+                                                : "border-red-100 bg-red-50 text-red-400 cursor-not-allowed opacity-70")
+                                        }
+                                    >
+                                        {choice.text}
+                                    </button>
+                                ))
+                            ) : (
+                                <div className="border border-slate-200 bg-slate-50 rounded-lg px-4 py-6 text-center text-sm text-slate-500">
+                                    <p className="font-semibold mb-2">The End</p>
+                                    <p className="mb-3">
+                                        You reached a page with no choices.
+                                    </p>
+                                    <button
+                                        onClick={restart}
+                                        className="text-indigo-600 font-semibold hover:underline"
+                                    >
+                                        Play again from the beginning
+                                    </button>
                                 </div>
                             )}
                         </div>
-                        <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
-                            <div className="flex-1 p-6 border-r border-slate-100 flex flex-col h-full overflow-hidden">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">
-                                    Story Text
-                                </label>
-                                <textarea
-                                    value={activeNode.content}
-                                    readOnly={isReadOnly}
-                                    onChange={(e) => {
-                                        if (isReadOnly) return;
-                                        updateNode("content", e.target.value);
-                                    }}
-                                    className="flex-1 w-full resize-none focus:outline-none text-lg leading-relaxed text-slate-700 serif-text p-2 -ml-2 rounded hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-50 transition-all disabled:bg-slate-50"
-                                    placeholder="Write your story here..."
-                                ></textarea>
-                                <div className="pt-2 border-t border-slate-50 text-right">
-                                    <p className="text-xs text-slate-400 font-medium">
-                                        {
-                                            activeNode.content
-                                                .split(/\s+/)
-                                                .filter((w) => w.length > 0).length
-                                        }{" "}
-                                        words
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="w-full md:w-80 bg-slate-50 p-6 overflow-y-auto border-l border-slate-100">
-                                <div className="flex justify-between items-center mb-6">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                                        Choices ({activeNode.choices.length})
-                                    </label>
-                                    {!isReadOnly && (
-                                        <button
-                                            onClick={addChoice}
-                                            className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-1 bg-indigo-50 px-2 py-1 rounded"
-                                        >
-                                            <Icon name="Plus" size={14} /> Add Choice
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="space-y-4">
-                                    {activeNode.choices.map((choice) => (
-                                        <div
-                                            key={choice.id}
-                                            className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative group"
-                                        >
-                                            <div className="mb-3">
-                                                <label className="text-[10px] text-slate-500 font-bold block mb-1.5 uppercase tracking-wider">
-                                                    Button Text
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={choice.text}
-                                                    disabled={isReadOnly}
-                                                    onChange={(e) =>
-                                                        updateChoice(
-                                                            choice.id,
-                                                            "text",
-                                                            e.target.value
-                                                        )
-                                                    }
-                                                    className="w-full p-2 border border-slate-200 rounded text-sm focus:border-indigo-500 focus:outline-none disabled:bg-slate-50"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="text-[10px] text-slate-500 font-bold block mb-1.5 uppercase tracking-wider">
-                                                    Leads To
-                                                </label>
-                                                <div className="flex gap-2">
-                                                    <select
-                                                        value={choice.targetId || ""}
-                                                        disabled={isReadOnly}
-                                                        onChange={(e) =>
-                                                            updateChoice(
-                                                                choice.id,
-                                                                "targetId",
-                                                                e.target.value || null
-                                                            )
-                                                        }
-                                                        className="flex-1 p-2 border border-slate-200 rounded text-sm focus:border-indigo-500 focus:outline-none bg-white disabled:bg-slate-50"
-                                                    >
-                                                        <option value="">Select a page...</option>
-                                                        {nodes
-                                                            .filter((n) => n.id !== activeNode.id)
-                                                            .map((n) => (
-                                                                <option key={n.id} value={n.id}>
-                                                                    {n.title}
-                                                                </option>
-                                                            ))}
-                                                    </select>
-                                                    {!choice.targetId && !isReadOnly && (
-                                                        <button
-                                                            onClick={() =>
-                                                                createNewPageForChoice(choice.id)
-                                                            }
-                                                            className="bg-indigo-100 text-indigo-700 p-2 rounded hover:bg-indigo-200"
-                                                            title="Create New Page"
-                                                        >
-                                                            <Icon name="Plus" size={16} />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            {!isReadOnly && (
-                                                <button
-                                                    onClick={() => removeChoice(choice.id)}
-                                                    className="absolute -top-2 -right-2 bg-white text-slate-400 hover:text-red-500 rounded-full p-1 shadow border border-slate-200 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                >
-                                                    <Icon name="X" size={14} />
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
-                                    {activeNode.choices.length === 0 && (
-                                        <div className="text-center p-6 border-2 border-dashed border-slate-200 rounded-lg">
-                                            <p className="text-xs text-slate-400">
-                                                No choices yet.
-                                                <br />
-                                                This page is an ending.
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
                     </div>
-                </div>
-            );
-        };
-
-        const Player = ({ nodes, metadata }) => {
-            const [history, setHistory] = useState(["start"]);
-            const currentNode =
-                nodes.find((n) => n.id === history[history.length - 1]) || nodes[0];
-
-            const handleChoice = (targetId) => {
-                if (targetId) setHistory([...history, targetId]);
-            };
-
-            const restart = () => setHistory(["start"]);
-            const goBack = () => {
-                if (history.length > 1) setHistory(history.slice(0, -1));
-            };
-
-            return (
-                <div className="max-w-2xl mx-auto fade-in pb-20">
-                    <div className="bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden min-h-[60vh] flex flex-col relative">
-                        <div className="bg-indigo-600 p-8 text-white text-center relative overflow-hidden">
-                            <div className="relative z-10">
-                                <h1 className="text-3xl font-bold font-serif mb-2">
-                                    {metadata.title}
-                                </h1>
-                                <p className="text-indigo-200 text-sm font-medium">
-                                    By {metadata.author}
-                                </p>
-                            </div>
-                            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-indigo-800 opacity-50"></div>
+                    {history.length > 1 && (
+                        <div className="px-6 py-3 border-t border-slate-200 flex justify-between text-xs text-slate-500">
+                            <button
+                                onClick={goBack}
+                                className="hover:text-indigo-600 font-semibold"
+                            >
+                                ← Go back
+                            </button>
+                            <span>Pages visited: {history.length}</span>
                         </div>
-                        <div className="p-8 md:p-12 flex-1 flex flex-col">
-                            <h2 className="text-xl font-bold text-slate-800 mb-6 pb-4 border-b border-slate-100">
-                                {currentNode.title}
-                            </h2>
-                            <div className="prose prose-slate max-w-none mb-8 flex-1">
-                                <p className="whitespace-pre-wrap text-lg leading-relaxed text-slate-700 serif-text">
-                                    {currentNode.content}
-                                </p>
-                            </div>
-                            <div className="space-y-3 mt-auto">
-                                {currentNode.choices.length > 0 ? (
-                                    currentNode.choices.map((choice) => (
-                                        <button
-                                            key={choice.id}
-                                            onClick={() => handleChoice(choice.targetId)}
-                                            className="w-full p-4 text-left border-2 border-slate-100 rounded-lg hover:border-indigo-500 hover:bg-indigo-50 transition-all font-medium text-slate-700 hover:text-indigo-700 flex justify-between group"
-                                        >
-                                            <span>{choice.text}</span>
-                                            <span className="opacity-0 group-hover:opacity-100 text-indigo-500">
-                                                →
-                                            </span>
-                                        </button>
-                                    ))
-                                ) : (
-                                    <div className="text-center py-8 bg-slate-50 rounded-lg border border-slate-100">
-                                        <p className="text-slate-500 font-bold mb-4">The End</p>
-                                        <button
-                                            onClick={restart}
-                                            className="inline-flex items-center gap-2 text-indigo-600 font-bold hover:underline"
-                                        >
-                                            <Icon name="Refresh" size={16} /> Play Again
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        {history.length > 1 && (
-                            <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-between text-sm text-slate-500">
-                                <button
-                                    onClick={goBack}
-                                    className="hover:text-indigo-600"
-                                >
-                                    ← Back
-                                </button>
-                                <span>Page {history.length}</span>
-                            </div>
-                        )}
-                    </div>
+                    )}
                 </div>
-            );
-        };
+            </div>
+        );
+    }
 
-        const App = () => {
-            const [activeTab, setActiveTab] = useState("planner");
-            const [metadata, setMetadata] = useState(INITIAL_METADATA);
-            const [nodes, setNodes] = useState(INITIAL_NODES);
-            const [activeNodeId, setActiveNodeId] = useState("start");
-            const [toast, setToast] = useState(null);
-            const [isSyncing, setIsSyncing] = useState(false);
+    // ----- Main App -----
+    function App() {
+        const [firebaseUser, setFirebaseUser] = useState(null);
+        const [authReady, setAuthReady] = useState(false);
+        const [activeTab, setActiveTab] = useState("planner");
+        const [metadata, setMetadata] = useState(INITIAL_METADATA);
+        const [nodes, setNodes] = useState(INITIAL_NODES);
+        const [activeNodeId, setActiveNodeId] = useState("start");
+        const [isSyncing, setIsSyncing] = useState(false);
+        const [isDataReady, setIsDataReady] = useState(false);
+        const [toast, setToast] = useState(null);
+        const [shareUrl, setShareUrl] = useState("");
+        const [isShareOpen, setIsShareOpen] = useState(false);
 
-            const [firebaseUser, setFirebaseUser] = useState(null);
-            const [authReady, setAuthReady] = useState(false);
+        const saveTimeoutRef = useRef(null);
+        const lastSavedRef = useRef(null);
+        const urlParams = new URLSearchParams(window.location.search);
+        const snapshotId = urlParams.get("snapshot");
+        const isSnapshotMode = !!snapshotId;
 
-            const [isShareOpen, setIsShareOpen] = useState(false);
-            const [shareUrl, setShareUrl] = useState("");
+        // Auth init
+        useEffect(() => {
+            if (!window.firebase) return;
+            const { auth, signInAnonymously, onAuthStateChanged } = window.firebase;
 
-            const fileInputRef = useRef(null);
-            const lastSavedRef = useRef(null);
+            signInAnonymously(auth).catch(console.error);
 
-            const params = new URLSearchParams(window.location.search);
-            const snapshotId = params.get("snapshot");
-            const isSnapshotMode = !!snapshotId;
+            const unsub = onAuthStateChanged(auth, user => {
+                setFirebaseUser(user);
+                setAuthReady(true);
+            });
 
-            // Toast helper
-            const showToast = (msg) => {
-                setToast(msg);
-                setTimeout(() => setToast(null), 3000);
-            };
+            return () => unsub();
+        }, []);
 
-            // Watch Firebase auth state
-            useEffect(() => {
-                if (!window.firebase || !window.firebase.auth) return;
-                const unsub = window.firebase.onAuthStateChanged(
-                    window.firebase.auth,
-                    (user) => {
-                        setFirebaseUser(user);
-                        setAuthReady(true);
-                    }
-                );
-                return () => unsub();
-            }, []);
+        // Load data: snapshot OR personal story
+        useEffect(() => {
+            if (!window.firebase || !window.firebase.db) return;
+            const { db, doc, getDoc, onSnapshot, setDoc } = window.firebase;
 
-            // Load story data
-            useEffect(() => {
-                if (!window.firebase || !window.firebase.db) return;
-                const db = window.firebase.db;
-
-                let unsub = null;
-
-                const load = async () => {
-                    // Shared snapshot view (read-only)
-                    if (isSnapshotMode && snapshotId) {
-                        try {
-                            const ref = window.firebase.doc(db, "snapshots", snapshotId);
-                            const snap = await window.firebase.getDoc(ref);
-                            if (snap.exists()) {
-                                const data = snap.data();
-                                setMetadata(data.metadata || INITIAL_METADATA);
-                                setNodes(data.nodes || INITIAL_NODES);
-                            } else {
-                                showToast("Shared story not found.");
-                            }
-                        } catch (e) {
-                            console.error(e);
-                            showToast("Error loading shared story.");
-                        }
-                        return;
-                    }
-
-                    // Normal editor: subscribe to user's own story
-                    if (!firebaseUser) return;
-
-                    const storyRef = window.firebase.doc(
-                        db,
-                        "stories",
-                        firebaseUser.uid
-                    );
-
-                    unsub = window.firebase.onSnapshot(
-                        storyRef,
-                        async (docSnap) => {
-                            if (docSnap.exists()) {
-                                const data = docSnap.data();
-                                const newMetadata = data.metadata || INITIAL_METADATA;
-                                const newNodes = data.nodes || INITIAL_NODES;
-
-                                setMetadata(newMetadata);
-                                setNodes(newNodes);
-
-                                // Remember this snapshot as the "saved" version
-                                lastSavedRef.current = JSON.stringify({
-                                    metadata: newMetadata,
-                                    nodes: newNodes,
-                                });
-                            }
-                            else {
-                                // First time: create initial doc
-                                try {
-                                    await window.firebase.setDoc(storyRef, {
-                                        metadata: INITIAL_METADATA,
-                                        nodes: INITIAL_NODES,
-                                        lastUpdated: new Date().toISOString()
-                                    });
-                                } catch (e) {
-                                    console.error(e);
-                                }
-                            }
-                        },
-                        (err) => {
-                            console.error(err);
-                            showToast("Error syncing story.");
-                        }
-                    );
-                };
-
-                load();
-
-                return () => {
-                    if (unsub) unsub();
-                };
-            }, [firebaseUser, isSnapshotMode, snapshotId]);
-
-            // Save changes (only when editing own story)
-            useEffect(() => {
-                if (isSnapshotMode) return;
-                if (!firebaseUser) return;
-                if (!window.firebase || !window.firebase.db) return;
-
-                const db = window.firebase.db;
-                const storyRef = window.firebase.doc(db, "stories", firebaseUser.uid);
-
-                const timeoutId = setTimeout(async () => {
-                    // Only save if something actually changed vs lastSavedRef
-                    const currentState = JSON.stringify({ metadata, nodes });
-                    if (lastSavedRef.current && lastSavedRef.current === currentState) {
-                        return;
-                    }
-
+            if (isSnapshotMode && snapshotId) {
+                // Read-only shared snapshot
+                (async () => {
                     try {
-                        setIsSyncing(true);
-                        await window.firebase.setDoc(storyRef, {
-                            metadata,
-                            nodes,
-                            lastUpdated: new Date().toISOString()
-                        });
-
-                        // Mark this state as the latest saved one
-                        lastSavedRef.current = currentState;
+                        const ref = doc(db, "snapshots", snapshotId);
+                        const snap = await getDoc(ref);
+                        if (snap.exists()) {
+                            const data = snap.data();
+                            const loadedMeta = data.metadata || INITIAL_METADATA;
+                            const loadedNodes = data.nodes || INITIAL_NODES;
+                            setMetadata(loadedMeta);
+                            setNodes(loadedNodes);
+                            setActiveNodeId(loadedNodes[0]?.id || "start");
+                            lastSavedRef.current = JSON.stringify({
+                                metadata: loadedMeta,
+                                nodes: loadedNodes
+                            });
+                        }
                     } catch (e) {
-                        console.error("Save error:", e);
+                        console.error("Snapshot load error", e);
                     } finally {
-                        setIsSyncing(false);
+                        setIsDataReady(true);
                     }
-                }, 1000); // debounce
+                })();
 
-                return () => clearTimeout(timeoutId);
-            }, [metadata, nodes, firebaseUser, isSnapshotMode]);
+                return;
+            }
 
-            // Google Sign-In
-            const handleGoogleSignIn = async () => {
-                if (!window.firebase || !window.firebase.auth) return;
-                const auth = window.firebase.auth;
-                try {
-                    const current = auth.currentUser;
-                    const provider = new window.firebase.GoogleAuthProvider();
+            // Editor mode: subscribe to user's doc
+            if (!authReady || !firebaseUser) return;
 
-                    // Upgrade anonymous account so the uid stays the same
-                    if (current && current.isAnonymous) {
-                        const result = await window.firebase.linkWithPopup(
-                            current,
-                            provider
-                        );
-                        showToast(`Signed in as ${result.user.email}`);
-                    } else {
-                        const result = await window.firebase.signInWithPopup(
-                            auth,
-                            provider
-                        );
-                        showToast(`Signed in as ${result.user.email}`);
-                    }
-                } catch (e) {
-                    console.error(e);
-                    showToast("Google sign-in failed.");
-                }
-            };
+            const storyRef = doc(db, "stories", firebaseUser.uid);
 
-            const handleSignOut = async () => {
-                if (!window.firebase || !window.firebase.auth) return;
-                try {
-                    await window.firebase.signOut(window.firebase.auth);
-                    showToast(
-                        "Signed out. A new anonymous workspace will be created on refresh."
-                    );
-                    // optional: auto re-anon sign-in is handled by initAuth in module
-                } catch (e) {
-                    console.error(e);
-                    showToast("Sign-out failed.");
-                }
-            };
-
-            // Export JSON
-            const handleExport = () => {
-                const dataStr = JSON.stringify({ metadata, nodes }, null, 2);
-                const blob = new Blob([dataStr], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = `${
-                    metadata.title.replace(/\s+/g, "_") || "story"
-                }.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                showToast("Story exported to JSON!");
-            };
-
-            // Import JSON
-            const handleImportClick = () => {
-                if (fileInputRef.current) {
-                    fileInputRef.current.click();
-                }
-            };
-
-            const handleFileChange = (event) => {
-                const file = event.target.files[0];
-                if (!file) return;
-
-                const reader = new FileReader();
-                reader.onload = (e) => {
+            const unsub = onSnapshot(
+                storyRef,
+                async snap => {
                     try {
-                        const json = JSON.parse(e.target.result);
-
-                        if (json.metadata && json.nodes) {
-                            setMetadata(json.metadata);
-                            setNodes(json.nodes);
-                            showToast("Story imported successfully!");
-                            setActiveTab("builder");
+                        if (snap.exists()) {
+                            const data = snap.data();
+                            const loadedMeta = data.metadata || INITIAL_METADATA;
+                            const loadedNodes = data.nodes || INITIAL_NODES;
+                            setMetadata(loadedMeta);
+                            setNodes(loadedNodes);
+                            setActiveNodeId(loadedNodes[0]?.id || "start");
+                            lastSavedRef.current = JSON.stringify({
+                                metadata: loadedMeta,
+                                nodes: loadedNodes
+                            });
                         } else {
-                            showToast("Invalid file format. Missing metadata or nodes.");
+                            await setDoc(storyRef, {
+                                metadata: INITIAL_METADATA,
+                                nodes: INITIAL_NODES,
+                                lastUpdated: new Date().toISOString()
+                            });
+                            lastSavedRef.current = JSON.stringify({
+                                metadata: INITIAL_METADATA,
+                                nodes: INITIAL_NODES
+                            });
                         }
-                    } catch (error) {
-                        console.error("Import error:", error);
-                        showToast("Error parsing JSON file.");
+                    } catch (e) {
+                        console.error("Subscribe error", e);
+                    } finally {
+                        setIsDataReady(true);
                     }
-                };
-
-                reader.readAsText(file);
-                // Reset input so user can upload the same file again later
-                event.target.value = null;
-            };
-
-
-            // Create snapshot share link
-            const handleShare = async () => {
-                if (!window.firebase || !window.firebase.db) {
-                    showToast("Database not initialized.");
-                    return;
+                },
+                error => {
+                    console.error("onSnapshot error", error);
+                    setIsDataReady(true);
                 }
-                const db = window.firebase.db;
+            );
 
+            return () => unsub();
+        }, [authReady, firebaseUser, isSnapshotMode, snapshotId]);
+
+        // Autosave ONLY when data actually changed
+        useEffect(() => {
+            if (
+                isSnapshotMode || // read-only
+                !window.firebase ||
+                !window.firebase.db ||
+                !authReady ||
+                !firebaseUser ||
+                !isDataReady
+            ) {
+                return;
+            }
+
+            const current = JSON.stringify({ metadata, nodes });
+            if (lastSavedRef.current === current) {
+                // Nothing changed → don't show spinner or hit Firestore
+                return;
+            }
+
+            if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
+            }
+
+            const { db, doc, setDoc } = window.firebase;
+
+            saveTimeoutRef.current = setTimeout(async () => {
                 try {
-                    // Create a reference with an auto-generated ID safely
-                    const colRef = window.firebase.collection(db, "snapshots");
-                    // Using doc(colRef) can be flaky; explicit usage is safer:
-                    const docRef = window.firebase.doc(colRef); 
-                    
-                    if (!docRef || !docRef.id) {
-                        throw new Error("Failed to generate share ID");
-                    }
-
-                    await window.firebase.setDoc(docRef, {
+                    setIsSyncing(true);
+                    const storyRef = doc(db, "stories", firebaseUser.uid);
+                    await setDoc(storyRef, {
                         metadata,
                         nodes,
-                        ownerId: firebaseUser ? firebaseUser.uid : null,
-                        createdAt: new Date().toISOString()
+                        lastUpdated: new Date().toISOString()
                     });
-
-                    const url = `${window.location.origin}${window.location.pathname}?snapshot=${docRef.id}`;
-                    setShareUrl(url);
-                    setIsShareOpen(true);
-                    showToast("Share link created!");
+                    lastSavedRef.current = current;
                 } catch (e) {
-                    console.error("Share Error:", e);
-                    showToast("Error creating share link. Check console.");
+                    console.error("Save error", e);
+                } finally {
+                    setIsSyncing(false);
                 }
+            }, 1000); // debounce
+
+            return () => {
+                if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
             };
+        }, [metadata, nodes, authReady, firebaseUser, isSnapshotMode, isDataReady]);
 
-            const isReadOnly = isSnapshotMode;
+        const showToast = msg => {
+            setToast(msg);
+            setTimeout(() => setToast(null), 2500);
+        };
 
+        const handleShare = async () => {
+            if (!window.firebase || !window.firebase.db) {
+                showToast("Cloud not ready yet.");
+                return;
+            }
+            const { db, collection, addDoc } = window.firebase;
+
+            try {
+                const colRef = collection(db, "snapshots");
+                const docRef = await addDoc(colRef, {
+                    metadata,
+                    nodes,
+                    ownerId: firebaseUser ? firebaseUser.uid : null,
+                    createdAt: new Date().toISOString()
+                });
+
+                const base = window.location.href.split("?")[0];
+                const url = `${base}?snapshot=${docRef.id}`;
+                setShareUrl(url);
+                setIsShareOpen(true);
+                showToast("Share link created!");
+            } catch (e) {
+                console.error("Share error", e);
+                showToast("Error creating share link.");
+            }
+        };
+
+        const isReadOnly = isSnapshotMode;
+
+        // ----- UI -----
+        if (!isDataReady) {
             return (
-                <div className="min-h-screen flex flex-col">
-                    {/* Header */}
-                    <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-                        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-serif font-bold text-xl">
-                                    S
-                                </div>
-                                <h1 className="font-bold text-slate-800 hidden sm:block">
-                                    StoryBuilder{" "}
-                                    <span className="text-slate-400 font-normal">
-                                        | Grade 7
-                                    </span>
-                                </h1>
-                                {isSnapshotMode && (
-                                    <span className="ml-2 text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full">
-                                        Viewing shared story (read-only)
-                                    </span>
-                                )}
+                <div className="min-h-screen flex items-center justify-center">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 px-8 py-6 text-center space-y-2">
+                        <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                        <p className="text-sm text-slate-700 font-semibold">
+                            Connecting to your story…
+                        </p>
+                        <p className="text-xs text-slate-500">
+                            Loading data from the cloud.
+                        </p>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="min-h-screen flex flex-col">
+                {/* Header */}
+                <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+                    <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">
+                                S
                             </div>
-
-                            {/* Tabs */}
-                            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-                                <button
-                                    onClick={() => setActiveTab("planner")}
-                                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${
-                                        activeTab === "planner"
-                                            ? "bg-white text-indigo-600 shadow-sm"
-                                            : "text-slate-500 hover:text-slate-700"
-                                    }`}
-                                >
-                                    1. Plan
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab("builder")}
-                                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${
-                                        activeTab === "builder"
-                                            ? "bg-white text-indigo-600 shadow-sm"
-                                            : "text-slate-500 hover:text-slate-700"
-                                    }`}
-                                >
-                                    2. Build
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab("player")}
-                                    className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${
-                                        activeTab === "player"
-                                            ? "bg-white text-indigo-600 shadow-sm"
-                                            : "text-slate-500 hover:text-slate-700"
-                                    }`}
-                                >
-                                    3. Preview
-                                </button>
-                            </div>
-
-                            {/* Right side controls */}
-                            <div className="flex items-center gap-3">
-                                {isSyncing && (
-                                    <div
-                                        className="sync-spinner"
-                                        title="Saving..."
-                                    ></div>
-                                )}
-
-                                {/* Auth controls */}
-                                <div className="hidden sm:flex flex-col items-end mr-2 max-w-[160px]">
-                                    {firebaseUser && !firebaseUser.isAnonymous && (
-                                        <>
-                                            <span className="text-[10px] text-slate-400 font-medium">
-                                                Signed in as
-                                            </span>
-                                            <span className="text-[11px] font-semibold text-slate-700 truncate">
-                                                {firebaseUser.email}
-                                            </span>
-                                        </>
-                                    )}
-                                    {firebaseUser && firebaseUser.isAnonymous && (
-                                        <span className="text-[10px] text-slate-400">
-                                            Working as guest (changes stay on
-                                            this device unless you sign in)
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h1 className="text-sm sm:text-base font-bold text-slate-800">
+                                        StoryBuilder
+                                    </h1>
+                                    <span className="text-xs text-slate-400">
+                                        | Grade 7 CYOA
+                                    </span>
+                                    {isSnapshotMode && (
+                                        <span className="text-[10px] uppercase tracking-wide ml-2 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                            Shared read-only
                                         </span>
                                     )}
                                 </div>
-
-                                <button
-                                    onClick={handleGoogleSignIn}
-                                    className="text-xs sm:text-sm border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1"
-                                >
-                                    <Icon name="Link" size={14} />
-                                    {firebaseUser && !firebaseUser.isAnonymous
-                                        ? "Switch Google Account"
-                                        : "Sign in with Google"}
-                                </button>
-
-                                {firebaseUser && !firebaseUser.isAnonymous && (
-                                    <button
-                                        onClick={handleSignOut}
-                                        className="hidden sm:inline-flex text-xs sm:text-sm text-slate-500 hover:text-red-600 px-2 py-1"
-                                    >
-                                        Sign out
-                                    </button>
-                                )}
-
-                                {/* Export / Import / Share (only when editing own story) */}
-                                {!isSnapshotMode && (
-                                    <>
-                                        <div className="hidden md:flex gap-2">
-                                            <button
-                                                onClick={handleExport}
-                                                className="text-slate-500 hover:text-indigo-600 p-2 rounded-full hover:bg-slate-50 transition-colors"
-                                                title="Export JSON"
-                                            >
-                                                <Icon name="Download" size={20} />
-                                            </button>
-                                            <button
-                                                onClick={handleImportClick}
-                                                className="text-slate-500 hover:text-indigo-600 p-2 rounded-full hover:bg-slate-50 transition-colors"
-                                                title="Import JSON"
-                                            >
-                                                <Icon name="Upload" size={20} />
-                                            </button>
-                                            <input
-                                                type="file"
-                                                ref={fileInputRef}
-                                                onChange={handleFileChange}
-                                                accept=".json"
-                                                className="hidden"
-                                            />
-                                        </div>
-                                        <button
-                                            onClick={handleShare}
-                                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors"
-                                        >
-                                            <Icon name="Share" size={16} /> Share
-                                        </button>
-                                    </>
-                                )}
-
-                                {isSnapshotMode && (
-                                    <button
-                                        onClick={() =>
-                                            (window.location.href =
-                                                window.location.pathname)
-                                        }
-                                        className="text-xs sm:text-sm text-slate-500 hover:text-indigo-600 font-semibold"
-                                    >
-                                        Create your own
-                                    </button>
-                                )}
+                                <p className="text-[11px] text-slate-500">
+                                    {firebaseUser
+                                        ? isSnapshotMode
+                                            ? "Viewing a shared snapshot."
+                                            : "Working as guest (changes saved to this browser account)."
+                                        : "Connecting…"}
+                                </p>
                             </div>
                         </div>
-                    </header>
 
-                    {/* Main Content */}
-                    <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
-                        {activeTab === "planner" && (
-                            <Planner
-                                metadata={metadata}
-                                setMetadata={setMetadata}
-                                isReadOnly={isReadOnly}
-                            />
-                        )}
-                        {activeTab === "builder" && (
-                            <Builder
-                                nodes={nodes}
-                                setNodes={setNodes}
-                                activeNodeId={activeNodeId}
-                                setActiveNodeId={setActiveNodeId}
-                                showToast={showToast}
-                                isReadOnly={isReadOnly}
-                            />
-                        )}
-                        {activeTab === "player" && (
-                            <Player nodes={nodes} metadata={metadata} />
-                        )}
-                    </main>
+                        <div className="flex items-center gap-4">
+                            {!isSnapshotMode && (
+                                <>
+                                    {isSyncing && (
+                                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                                            <div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                            <span>Saving…</span>
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={handleShare}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2"
+                                    >
+                                        <span>Share</span>
+                                    </button>
+                                </>
+                            )}
+                            {isSnapshotMode && (
+                                <button
+                                    onClick={() =>
+                                        (window.location.href =
+                                            window.location.pathname)
+                                    }
+                                    className="text-xs text-slate-500 hover:text-indigo-600 font-semibold"
+                                >
+                                    Create your own
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </header>
 
-                    <Toast
-                        message={toast}
-                        onClose={() => setToast(null)}
-                    />
-                    <ShareModal
-                        isOpen={isShareOpen}
-                        onClose={() => setIsShareOpen(false)}
-                        shareUrl={shareUrl}
-                        showToast={showToast}
-                    />
-                </div>
-            );
-        };
+                {/* Tabs */}
+                <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-4 space-y-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="bg-slate-100 inline-flex p-1 rounded-full shadow-inner">
+                            <TabButton
+                                active={activeTab === "planner"}
+                                onClick={() => setActiveTab("planner")}
+                            >
+                                Plan
+                            </TabButton>
+                            <TabButton
+                                active={activeTab === "builder"}
+                                onClick={() => setActiveTab("builder")}
+                            >
+                                Builder
+                            </TabButton>
+                            <TabButton
+                                active={activeTab === "preview"}
+                                onClick={() => setActiveTab("preview")}
+                            >
+                                Preview
+                            </TabButton>
+                        </div>
+                    </div>
 
-        const root = ReactDOM.createRoot(document.getElementById("root"));
-        root.render(<App />);
-    </script>
+                    {activeTab === "planner" && (
+                        <Planner
+                            metadata={metadata}
+                            setMetadata={setMetadata}
+                            readOnly={isReadOnly}
+                        />
+                    )}
+                    {activeTab === "builder" && (
+                        <Builder
+                            nodes={nodes}
+                            setNodes={setNodes}
+                            activeNodeId={activeNodeId}
+                            setActiveNodeId={setActiveNodeId}
+                            readOnly={isReadOnly}
+                        />
+                    )}
+                    {activeTab === "preview" && (
+                        <Player nodes={nodes} metadata={metadata} />
+                    )}
+                </main>
+
+                {/* Toast */}
+                {toast && (
+                    <div className="fixed bottom-4 left-1/2 -translate-x-1/2">
+                        <div className="bg-slate-900 text-white text-xs sm:text-sm px-4 py-2 rounded-full shadow-lg fade-in">
+                            {toast}
+                        </div>
+                    </div>
+                )}
+
+                {/* Share modal */}
+                {isShareOpen && (
+                    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 space-y-4 fade-in">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-lg font-bold text-indigo-700">
+                                    Share Project
+                                </h3>
+                                <button
+                                    onClick={() => setIsShareOpen(false)}
+                                    className="text-slate-400 hover:text-slate-700 text-sm"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                            <p className="text-sm text-slate-600">
+                                Send this link so others can read your story and see
+                                your structure.
+                            </p>
+                            <div className="flex border border-slate-300 rounded-lg overflow-hidden">
+                                <input
+                                    readOnly
+                                    value={shareUrl}
+                                    className="flex-1 px-3 py-2 text-xs sm:text-sm font-mono bg-white outline-none"
+                                    onClick={e => e.target.select()}
+                                />
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard
+                                            .writeText(shareUrl)
+                                            .then(() =>
+                                                showToast("Link copied to clipboard!")
+                                            )
+                                            .catch(() =>
+                                                showToast(
+                                                    "Copy failed – please copy manually."
+                                                )
+                                            );
+                                    }}
+                                    className="px-3 py-2 bg-indigo-600 text-white text-xs sm:text-sm font-semibold hover:bg-indigo-700"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
 </body>
 </html>
