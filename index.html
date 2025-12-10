@@ -13,18 +13,42 @@
     
     <!-- Firebase Imports -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // Note: Using addDoc for snapshots, setDoc for private auto-save, getDoc for public snapshot read.
-        import { getFirestore, doc, setDoc, getDoc, addDoc, collection, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, addDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Expose Firebase tools to the global scope for use in the React/Babel script
-        window.firebaseTools = { 
-            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, 
-            onAuthStateChanged, getFirestore, doc, setDoc, getDoc, 
-            addDoc, collection, onSnapshot, setLogLevel 
-        };
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+        apiKey: "AIzaSyBGGLJcXB0xiVJ1L6iQkg765rCxwjFj-ho",
+        authDomain: "story-builder-7e201.firebaseapp.com",
+        projectId: "story-builder-7e201",
+        storageBucket: "story-builder-7e201.firebasestorage.app",
+        messagingSenderId: "275747156",
+        appId: "1:275747156:web:0a677fe6073a49936578c1",
+        measurementId: "G-0KPYMPBV4C"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Expose what the React app needs on window
+    window.firebaseTools = {
+        app,
+        auth,
+        db,
+        signInAnonymously,
+        onAuthStateChanged,
+        doc,
+        setDoc,
+        getDoc,
+        addDoc,
+        collection,
+        onSnapshot
+    };
     </script>
+
 
     
     <!-- Load Fonts (Inter for UI, Merriweather for Story Text) -->
@@ -502,10 +526,8 @@
                 }
                 
                 const { doc, getDoc } = window.firebaseTools;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                // Path points to the public, point-in-time snapshot document
-                const SNAPSHOT_DOC_PATH = `/artifacts/${appId}/public/data/snapshots/${snapshotId}`;
-                const docRef = doc(db, SNAPSHOT_DOC_PATH);
+                // Public collection "snapshots" where each document is a shared story
+                const docRef = doc(db, "snapshots", snapshotId);
 
                 const fetchSharedStory = async () => {
                     setNodes(null); // Show loading
@@ -556,7 +578,6 @@
             return <Player nodes={nodes} metadata={metadata} isReadMode={true} />;
         };
 
-        // --- Dedicated Hook for Firebase Initialization ---
         const useFirebase = () => {
             const [db, setDb] = useState(null);
             const [userId, setUserId] = useState(null);
@@ -565,63 +586,46 @@
 
             useEffect(() => {
                 if (!window.firebaseTools) {
-                    setError("Firebase tools not available.");
+                    setError("Firebase SDK failed to load.");
                     return;
                 }
-                const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, setLogLevel } = window.firebaseTools;
-                
-                // setLogLevel('debug'); // Uncomment to debug Firebase
 
-                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                const { auth, db: firestoreDb, signInAnonymously, onAuthStateChanged } = window.firebaseTools;
 
-                try {
-                    const app = initializeApp(firebaseConfig);
-                    const firestore = getFirestore(app);
-                    const authInstance = getAuth(app);
-                    
-                    setDb(firestore);
+                setDb(firestoreDb);
 
-                    // Sign in the user (with token for editor, or anonymously for viewer/editor fallback)
-                    const authenticate = async () => {
-                        try {
-                            if (initialAuthToken) {
-                                await signInWithCustomToken(authInstance, initialAuthToken);
-                            } else {
-                                await signInAnonymously(authInstance);
-                            }
-                        } catch (e) {
-                            console.error("Firebase Auth Error:", e);
-                            setError("Authentication failed.");
-                            await signInAnonymously(authInstance); // Fallback to anonymous sign-in
+                const authenticate = async () => {
+                    try {
+                        if (!auth.currentUser) {
+                            await signInAnonymously(auth);
                         }
-                    };
-                    
-                    authenticate();
+                    } catch (e) {
+                        console.error("Firebase Auth Error:", e);
+                        setError("Authentication failed.");
+                    }
+                };
 
-                    // Set up Auth State Listener
-                    const unsubscribe = onAuthStateChanged(authInstance, (user) => {
-                        if (user) {
-                            setUserId(user.uid);
-                            setIsAuthReady(true);
-                            setError(null);
-                        } else {
-                            setUserId(null);
-                            setIsAuthReady(false);
-                        }
-                    });
+                authenticate();
 
-                    return () => unsubscribe();
-                } catch (e) {
-                    console.error("Firebase Initialization Failed:", e);
-                    setError("Cloud storage failed to initialize.");
-                }
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        setUserId(user.uid);
+                        setIsAuthReady(true);
+                        setError(null);
+                    } else {
+                        setUserId(null);
+                        setIsAuthReady(false);
+                    }
+                });
+
+                return () => unsubscribe();
             }, []);
-            
-            const isLoading = !isAuthReady; 
-            
+
+            const isLoading = !isAuthReady;
+
             return { db, userId, isAuthReady, isLoading, error };
         };
+
 
 
         // --- Main App Component ---
@@ -678,10 +682,9 @@
                 }
 
                 const { addDoc, collection } = window.firebaseTools;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                // Public collection path for snapshots
-                const SNAPSHOT_COLLECTION_PATH = `/artifacts/${appId}/public/data/snapshots`;
-                const collectionRef = collection(db, SNAPSHOT_COLLECTION_PATH);
+                // "snapshots" collection holds all shared stories
+                const collectionRef = collection(db, "snapshots");
+
 
                 const dataToSave = {
                     metadata: metadata,
@@ -754,9 +757,9 @@
                 if (!db || !userId || !isAuthReady || isReadMode) return;
 
                 const { doc, onSnapshot } = window.firebaseTools;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const STORY_DOC_PATH = `/artifacts/${appId}/users/${userId}/stories/main-story`;
-                const docRef = doc(db, STORY_DOC_PATH);
+                // Private auto-save document for this user
+                const docRef = doc(db, "users", userId, "stories", "main");
+
 
                 const unsubscribe = onSnapshot(docRef, (docSnapshot) => {
                     if (docSnapshot.exists()) {
@@ -788,9 +791,9 @@
                 if (!db || !userId || !isAuthReady || isReadMode) return;
 
                 const { doc, setDoc } = window.firebaseTools;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const STORY_DOC_PATH = `/artifacts/${appId}/users/${userId}/stories/main-story`;
-                const docRef = doc(db, STORY_DOC_PATH);
+                // Private auto-save document for this user
+                const docRef = doc(db, "users", userId, "stories", "main");
+
 
                 const dataToSave = {
                     metadata: currentMetadata,
